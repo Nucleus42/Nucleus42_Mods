@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<modDesc descVersion="105">
+	<author>Nucleus42</author>
+	<version>0.1.0.0</version>
+
+	<title>
+		<en>Forward Contracts</en>
+	</title>
+
+	<description>
+		<en><![CDATA[Multi-year agricultural supply contracts with named clients.
+
+Negotiate a fixed rate and an annual completion bonus, then deliver against a yearly quota for the length of the agreement. The rate is fixed, so the contract works as a hedge: when the market spikes you are locked in below it, and when the market falls the contract carries you.
+
+Build a reputation over time. Clients remember you, and repeat business earns better terms. Short-notice spot orders appear alongside the long agreements at a premium.
+
+Livestock contracts run on Realistic Livestock genetics. Early on you supply headcount; as your reputation grows the numbers fall and the genetic requirements rise, until you are a breeder shipping a handful of animals a year that nobody else can produce.
+
+Deliveries are local hauls you drive. Rail freight does not count.
+
+Requires Realistic Livestock (Ritter version).]]></en>
+	</description>
+
+	<iconFilename>icon_ForwardContracts.dds</iconFilename>
+
+	<!-- Design is server-authoritative, but MP is untested. Flip to true only after
+	     testing on a dedicated server. Note the game disables MP for unzipped mods
+	     regardless (scripts/mods.lua:661). -->
+	<multiplayer supported="false" />
+
+	<!-- Hard dependency. Realistic Livestock supplies the genetics model the animal
+	     contracts are built on; there is deliberately no fallback path. Listing it here
+	     also guarantees it loads first. -->
+	<dependencies>
+		<dependency>FS25_RealisticLivestockRM</dependency>
+	</dependencies>
+
+	<extraSourceFiles>
+		<sourceFile filename="scripts/main.lua" />
+	</extraSourceFiles>
+
+	<l10n>
+		<!-- Page title. TabbedMenu falls back to ui_<pageRootName> when the page root has
+		     no title attribute (TabbedMenu.lua:453-456); our page root is "contractBoard". -->
+		<text name="ui_contractBoard">
+			<en>Contracts</en>
+		</text>
+
+		<text name="fc_entry_active">
+			<en>active</en>
+		</text>
+		<text name="fc_entry_offer">
+			<en>offer</en>
+		</text>
+		<text name="fc_entry_spot">
+			<en>urgent</en>
+		</text>
+		<text name="fc_entry_spotActive">
+			<en>urgent · accepted</en>
+		</text>
+		<!-- Livestock contracts have no fill type to name, so this stands in as the product
+		     name everywhere a crop contract would print one. -->
+		<!-- A livestock offer is labelled by whether the farm has any equipment crossover.
+		     Neither is more likely to appear; the label only tells the player which kind of
+		     decision they are looking at. It deliberately does NOT say what the crossover is. -->
+		<text name="fc_entry_recommendation">
+			<en>recommendation</en>
+		</text>
+		<text name="fc_entry_opportunity">
+			<en>new opportunity</en>
+		</text>
+
+		<text name="fc_entry_livestock">
+			<en>Livestock</en>
+		</text>
+		<!-- THE CONTRACT TYPE, shown so the player can tell the three apart at a glance.
+		     They are genuinely different businesses (LIVESTOCK_DESIGN §2.4): a breeding
+		     contract delivers at breeding age for quick money at low margin, a supply
+		     contract at peak for slow money at high margin. A panel that called both
+		     "Livestock" hid the only distinction that matters when choosing between them. -->
+		<text name="fc_entry_livestockSupply">
+			<en>Livestock — supply</en>
+		</text>
+		<text name="fc_entry_livestockBreeding">
+			<en>Livestock — breeding stock</en>
+		</text>
+		<text name="fc_entry_livestockProduct">
+			<en>Livestock — produce</en>
+		</text>
+
+		<text name="fc_deadline_hours">
+			<en>%dh left</en>
+		</text>
+		<text name="fc_deadline_daysHours">
+			<en>%dd %dh left</en>
+		</text>
+		<text name="fc_deadline_expired">
+			<en>expired</en>
+		</text>
+
+		<text name="fc_button_negotiate">
+			<en>Negotiate</en>
+		</text>
+		<text name="fc_button_accept">
+			<en>Accept</en>
+		</text>
+
+		<!-- Money-type titles. The HUD renders these through
+		     g_i18n:getText(moneyType.title, moneyType.customEnv) (gui/hud/HUD.lua:297), and
+		     because we register with our own mod as customEnv the lookup lands HERE, not in
+		     the base game. Reusing a base key name like "finance_soldMaterials" does not
+		     inherit its text — it prints the raw key, which is what happened in play on
+		     2026-07-29. -->
+		<text name="fc_finance_settlement">
+			<en>Contract settlement</en>
+		</text>
+		<text name="fc_finance_bonus">
+			<en>Contract bonus</en>
+		</text>
+		<text name="fc_finance_penalty">
+			<en>Contract shortfall</en>
+		</text>
+
+		<text name="fc_detail_emptyTitle">
+			<en>Nothing here yet</en>
+		</text>
+		<text name="fc_detail_emptyBody">
+			<en>No contracts and no offers. Word gets around slowly when nobody knows your farm — check back in a day or two.</en>
+		</text>
+	</l10n>
+</modDesc>

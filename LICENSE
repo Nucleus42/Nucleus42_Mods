@@ -1,0 +1,58 @@
+# Licence — Nucleus42 Mods
+
+Copyright © 2026 Nucleus42. All rights reserved.
+
+This licence covers the mods published in this repository.
+
+## You may
+
+- **Download and use** these mods in Farming Simulator 25, single-player or on your own
+  server, for as long as you like, at no cost.
+- **Modify them for your own private use** on your own machine.
+- **Link to this repository** when telling other people about them.
+
+## You may not
+
+- **Re-upload or redistribute** these mods, in whole or in part, anywhere. That includes
+  other mod sites, file hosts, Discord servers, Steam Workshop, YouTube description links,
+  modpacks, "fixed" or "updated" re-releases, and any site that mirrors or re-hosts mod
+  files.
+- **Distribute a modified version.**
+- **Claim authorship**, or publish these files under another name.
+- **Sell them**, put them behind a paywall, or place them behind a link shortener,
+  advertising gateway or any other monetised redirect.
+
+## Sole distribution point
+
+**These mods may be downloaded only from https://github.com/Nucleus42/Nucleus42_Mods**
+
+If you obtained them anywhere else, that copy is unauthorised, may have been altered, and
+is not supported. This restriction stands until and unless a release is published through
+Giants' official ModHub, at which point ModHub becomes an additional authorised source.
+
+## Realistic Livestock
+
+**FS25_ForwardContracts requires Realistic Livestock (the Ritter version,
+`FS25_RealisticLivestockRM`) and does not function without it.**
+
+Realistic Livestock is the work of its own authors and is licensed separately under the GNU
+General Public License v3. This repository contains **no** Realistic Livestock code or data.
+Forward Contracts reads Realistic Livestock's live objects and published data at run time
+and ships none of it.
+
+Used with the kind permission of Ritter. Full credit for Realistic Livestock, its genetics
+model, its breeding simulation and its animal data belongs to its authors — Forward
+Contracts is built on top of that work and would not exist without it.
+
+Realistic Livestock: https://github.com/rittermod/FS25_RealisticLivestockRM
+
+## No warranty
+
+These mods are provided as-is, with no warranty of any kind. Farming Simulator saves are
+your responsibility — back them up. The author accepts no liability for lost saves, damaged
+savegames, or any other loss arising from use of these mods.
+
+## Getting in touch
+
+For permission to do anything not allowed above, or to report a problem, open an issue at
+https://github.com/Nucleus42/Nucleus42_Mods

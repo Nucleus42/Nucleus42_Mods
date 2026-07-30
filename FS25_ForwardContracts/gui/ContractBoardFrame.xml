@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<GUI name="forwardContractsBoard">
+	<!-- id binds the element to a field on the controller (self.contractBoard). `name` does
+	     NOT — it is only for in-XML lookups such as clipper references. The page root must
+	     be reachable because TabbedMenu asks the frame for its size and position. -->
+	<GuiElement profile="fc_pageContainer" id="contractBoard" name="contractBoard">
+
+		<GuiElement profile="fc_repContainer">
+			<Text profile="fc_repLabel" id="reputationLabel" text=""/>
+			<Bitmap profile="fc_repBarBg" id="reputationBarBg"/>
+			<!-- Fill is drawn after the background so it sits on top. Its width is set in
+			     Lua from the background's width, so the two can never disagree. -->
+			<Bitmap profile="fc_repBarFill" id="reputationBarFill"/>
+			<!-- What the current standing actually entitles the farm to. The label above names
+			     the standing; this says what it BUYS. Without it, slots and tiers are invisible
+			     and a player has no way to know why a second livestock offer never appears. -->
+			<Text profile="fc_repEntitlement" id="reputationEntitlement" text=""/>
+		</GuiElement>
+
+		<GuiElement profile="fc_listContainer">
+			<Bitmap profile="fs25_subCategoryStartClipper" name="startClipper"/>
+			<Bitmap profile="fs25_subCategoryStopClipper" name="endClipper"/>
+
+			<SmoothList profile="fc_list" id="boardList" wrapAround="true"
+				startClipperElementName="startClipper" endClipperElementName="endClipper"
+				onClick="onListSelectionChanged" onDoubleClick="onListDoubleClick">
+				<ListItem profile="fc_listItem">
+					<Text profile="fc_listItemTitle" name="title"/>
+					<Text profile="fc_listItemSubtitle" name="subtitle"/>
+				</ListItem>
+			</SmoothList>
+
+			<!-- No docked slider. The base slider box positions itself well away from the
+			     list and rendered as a stray vertical line down the middle of the page.
+			     The board never holds more than a handful of entries and SmoothList still
+			     scrolls with the wheel and the keyboard. -->
+		</GuiElement>
+
+		<GuiElement profile="fc_detailContainer">
+			<Text profile="fc_detailTitle" id="detailTitle" text=""/>
+			<Text profile="fc_detailBody" id="detailBody" text=""/>
+		</GuiElement>
+
+	</GuiElement>
+</GUI>

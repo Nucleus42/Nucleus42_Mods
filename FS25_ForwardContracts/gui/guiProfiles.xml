@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<GUIProfiles>
+	<!-- Own profiles only. Base-game profile names referenced from the frame XML are
+	     limited to ones already proven to work from a mod.
+
+	     ####################################################################################
+	     COLOURS HERE ARE LINEAR, NOT sRGB. Convert before writing any value.
+
+	     The engine gamma-encodes imageColor/textColor on output — a value is roughly
+	     square-rooted on its way to the screen, so 0.05 lands at ~0.25 and 0.25 at ~0.53.
+	     Author by eye and it renders far lighter and flatter than intended. This is
+	     measured, not assumed: see the colour notes in FS25_NucleusCommand/gui/guiProfiles.xml.
+
+	       linear = c/12.92                   if c <= 0.04045
+	       linear = ((c + 0.055)/1.055)^2.4   otherwise     ... c = hex_channel/255
+
+	     Tone ladder used here — sRGB intent on the left, linear actually written:
+
+	       panel        #101010   0.0052            near-black, the dialog surface
+	       button       #3A3A3A   0.0424
+	       button hover #6B6B6B   0.1470
+	       text primary #F3F3F3   0.8963
+	       text body    #D9D9D9   0.6939
+	       text muted   #B6B6B6   0.4678
+
+	     Also note: a colour-only Bitmap IS opaque at alpha 1. If the world still shows
+	     through a panel, that is a ReShade shader washing it out, not the profile — the
+	     answer is a darker opaque surface, not more alpha.
+	     #################################################################################### -->
+
+	<!-- fs25_menuContainer is the base-game full-page menu container. Extending it rather
+	     than hand-sizing an emptyPanel means the page inherits the menu's own geometry
+	     instead of guessing at it. -->
+	<Profile name="fc_pageContainer" extends="fs25_menuContainer"/>
+
+	<!-- Reputation header, above the list. -->
+
+	<!-- 88px, not 70: the entitlement line below the bar needs two lines of 14px text once it is
+	     spelled out in full. The list container starts at -120px and this one starts at -30px, so
+	     88 leaves 2px of clearance. DO NOT grow it further without moving the list. -->
+	<Profile name="fc_repContainer" extends="emptyPanel">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="60px -30px"/>
+		<size value="700px 88px"/>
+	</Profile>
+
+	<Profile name="fc_repLabel" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px 0px"/>
+		<size value="700px 26px"/>
+		<textSize value="19px"/>
+		<textBold value="true"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.8963 0.8963 0.8963 1"/>
+		<textUpperCase value="false"/>
+		<textMaxNumLines value="1"/>
+		<textMaxWidth value="700px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<Profile name="fc_repBarBg" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px -36px"/>
+		<size value="700px 12px"/>
+		<imageColor value="0.0185 0.0185 0.0185 1"/>
+	</Profile>
+
+	<!-- Harvest green, the same accent the base menu uses for a selected row, so the bar
+	     reads as part of the game rather than bolted on. -->
+	<Profile name="fc_repBarFill" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px -36px"/>
+		<size value="1px 12px"/>
+		<imageColor value="0.4852 0.9131 0.0467 1"/>
+	</Profile>
+
+	<!-- Sits below the bar: the bar ends at -48 and the container ends at -88, so 34px at -52
+	     fits. TWO LINES MAXIMUM — a third overflows the container and would collide with the
+	     list at -120. If the text in ContractBoardFrame:describeEntitlement grows further, the
+	     list has to move, not this. -->
+	<Profile name="fc_repEntitlement" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px -52px"/>
+		<size value="700px 34px"/>
+		<textSize value="14px"/>
+		<textBold value="false"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.6 0.6 0.6 1"/>
+		<textUpperCase value="false"/>
+		<textMaxNumLines value="2"/>
+		<textMaxWidth value="700px"/>
+	</Profile>
+
+	<Profile name="fc_listContainer" extends="emptyPanel">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="60px -120px"/>
+		<size value="720px 700px"/>
+	</Profile>
+
+	<Profile name="fc_list" extends="emptyPanel">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px 0px"/>
+		<size value="700px 700px"/>
+		<listItemSpacing value="4px"/>
+	</Profile>
+
+	<!-- EXTEND fs25_subCategoryListItem AND OVERRIDE THE SIZE ONLY. This is exactly what
+	     nucleusConsoleListItem does, and it is the whole reason that list works.
+
+	     DO NOT rebuild this row from baseReference. Tried 2026-07-28 and reverted the same
+	     day: the base profile supplies the row's layout and hit-testing as well as its
+	     graphic, none of which is visible to us (base GUI profiles live inside dataS.gar).
+	     Dropping the inheritance produced a row laid out from the bottom of the list area
+	     that would not take a mouse click at all. The green was gone, and so was the list.
+
+	     So the green is removed by TINTING the base graphic's states, not by replacing it.
+
+	     STATE KEY ORDER: imageSelectedColor, NOT imageColorSelected.
+	     GuiOverlay.loadProfileColors builds the key as `overlayName .. stateName .. "Color"`
+	     and `continue`s on any key it does not find (base/GuiOverlay.lua:123-130) — the wrong
+	     form produces no error, no warning and no effect. Do not retype these from memory.
+
+	     Selected and hover must differ or hovering an inactive row looks like selecting it.
+	     getOverlayState resolves SELECTED before HIGHLIGHTED, so the selected row keeps its
+	     tone and does not flicker to the hover style as the mouse crosses it. -->
+	<Profile name="fc_listItem" extends="fs25_subCategoryListItem">
+		<size value="700px 62px"/>
+		<imageSelectedColor value="0.0331 0.0331 0.0331 1"/>
+		<imageHighlightedColor value="0.0466 0.0466 0.0466 1"/>
+		<imageFocusedColor value="0.0331 0.0331 0.0331 1"/>
+	</Profile>
+
+	<!-- Text profiles extend baseReference and set everything explicitly.
+	     Inheriting from a base game text profile dragged in textUpperCase and a narrow
+	     textMaxWidth, which rendered every string in caps and wrapped the detail panel
+	     into a ~200px column. Never inherit text metrics you have not read. -->
+
+	<Profile name="fc_listItemTitle" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="18px -10px"/>
+		<size value="660px 24px"/>
+		<textSize value="17px"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.8963 0.8963 0.8963 1"/>
+		<!-- Constant in every state, the same as nucleusConsoleItemText. The row's tinted
+		     plate carries the selection; the text does not move. Text that changes colour on
+		     selection is what produced the unreadable row in the first place, so the rule
+		     here is that readability never depends on which state the row is in. -->
+		<textSelectedColor value="0.8963 0.8963 0.8963 1"/>
+		<textHighlightedColor value="0.8963 0.8963 0.8963 1"/>
+		<textFocusedColor value="0.8963 0.8963 0.8963 1"/>
+		<textUpperCase value="false"/>
+		<textMaxNumLines value="1"/>
+		<textMaxWidth value="650px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<Profile name="fc_listItemSubtitle" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="18px -36px"/>
+		<size value="660px 20px"/>
+		<textSize value="13px"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<!-- Constant in every state, like the title. This is the line that "barely survived"
+		     the green. Lifted a step (muted -> body) so it holds up against the tinted
+		     selected plate as well as the unselected row. -->
+		<textColor value="0.6939 0.6939 0.6939 1"/>
+		<textSelectedColor value="0.6939 0.6939 0.6939 1"/>
+		<textHighlightedColor value="0.6939 0.6939 0.6939 1"/>
+		<textFocusedColor value="0.6939 0.6939 0.6939 1"/>
+		<textUpperCase value="false"/>
+		<textMaxNumLines value="1"/>
+		<textMaxWidth value="650px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<!-- The page content area is already inset past the tab strip, so these offsets are
+	     relative to that, not to the screen. At 1000px wide the detail text ran off the
+	     right edge; 720px keeps it inside. -->
+	<Profile name="fc_detailContainer" extends="emptyPanel">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="760px -40px"/>
+		<size value="720px 780px"/>
+	</Profile>
+
+	<Profile name="fc_detailTitle" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px 0px"/>
+		<size value="700px 36px"/>
+		<textSize value="24px"/>
+		<textBold value="true"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.8963 0.8963 0.8963 1"/>
+		<textUpperCase value="false"/>
+		<textMaxNumLines value="1"/>
+		<textMaxWidth value="700px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<Profile name="fc_detailBody" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="0px -56px"/>
+		<size value="700px 620px"/>
+		<textSize value="17px"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.6939 0.6939 0.6939 1"/>
+		<textUpperCase value="false"/>
+		<textLineHeightScale value="1.35"/>
+		<textWrapping value="true"/>
+		<textMaxNumLines value="30"/>
+		<textMaxWidth value="700px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<!-- Dialog -->
+
+	<!-- Full-screen opaque backdrop. Anything less and the board's text reads through from
+	     behind, which a modal negotiation should never allow.
+
+	     CENTRED, not corner-anchored. The first version used pivot "0 1" (top edge) at
+	     position 0px 0px, and GUI y=0 is the BOTTOM of the screen — so a top-pivoted box
+	     hung entirely below the viewport and drew nothing at all. The board showing through
+	     was not a transparency problem; the backdrop was off-screen. Confirmed in play
+	     2026-07-28.
+
+	     Centring a 1920x1080 box on the screen centre is exactly full screen and does not
+	     depend on getting pivot-vs-origin right, which is the same pattern fc_dialogBg
+	     already proves works.
+
+	     Draw order is not the issue and never was: Gui:draw renders currentGui first and
+	     then every dialog (gui/base/Gui.lua:486-495), so a dialog element genuinely does
+	     paint over the menu behind it. -->
+	<Profile name="fc_dialogBackdrop" extends="baseReference">
+		<anchors value="0.5 0.5 0.5 0.5"/>
+		<pivot value="0.5 0.5"/>
+		<position value="0px 0px"/>
+		<size value="1920px 1080px"/>
+		<imageColor value="0.0026 0.0026 0.0026 1"/>
+	</Profile>
+
+	<!-- The card the dialog content sits on, a step lighter than the backdrop so it reads
+	     as a surface. No slice id: base-game slice names are not visible from here and a
+	     wrong one renders nothing. -->
+	<Profile name="fc_dialogBg" extends="baseReference">
+		<anchors value="0.5 0.5 0.5 0.5"/>
+		<pivot value="0.5 0.5"/>
+		<size value="1100px 760px"/>
+		<imageColor value="0.0110 0.0110 0.0110 1"/>
+	</Profile>
+
+	<Profile name="fc_dialogTitle" extends="baseReference">
+		<anchors value="0.5 0.5 1 1"/>
+		<pivot value="0.5 1"/>
+		<position value="0px -30px"/>
+		<size value="1000px 40px"/>
+		<textSize value="24px"/>
+		<textBold value="true"/>
+		<textAlignment value="center"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.8963 0.8963 0.8963 1"/>
+		<textUpperCase value="false"/>
+		<textMaxNumLines value="1"/>
+		<textMaxWidth value="1000px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<Profile name="fc_dialogText" extends="baseReference">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<position value="50px -100px"/>
+		<size value="1000px 300px"/>
+		<textSize value="17px"/>
+		<textAlignment value="left"/>
+		<textVerticalAlignment value="top"/>
+		<textColor value="0.6939 0.6939 0.6939 1"/>
+		<textUpperCase value="false"/>
+		<textLineHeightScale value="1.35"/>
+		<textWrapping value="true"/>
+		<textMaxNumLines value="12"/>
+		<textMaxWidth value="1000px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+
+	<Profile name="fc_dialogOption" extends="fs25_multiTextOption">
+		<anchors value="0 0 1 1"/>
+		<pivot value="0 1"/>
+		<size value="460px 60px"/>
+	</Profile>
+
+	<!-- buttonBase supplies the box but no text metrics, so `text=` rendered blank.
+	     Every text attribute has to be set here. -->
+	<Profile name="fc_dialogButton" extends="buttonBase">
+		<anchors value="0 0 0 0"/>
+		<pivot value="0 0"/>
+		<size value="320px 60px"/>
+		<textSize value="17px"/>
+		<textBold value="true"/>
+		<textAlignment value="center"/>
+		<textVerticalAlignment value="middle"/>
+		<textUpperCase value="false"/>
+		<imageColor value="0.0424 0.0424 0.0424 1"/>
+		<imageFocusedColor value="0.1470 0.1470 0.1470 1"/>
+		<imageHighlightedColor value="0.1470 0.1470 0.1470 1"/>
+		<textColor value="0.8963 0.8963 0.8963 1"/>
+		<textFocusedColor value="0.8963 0.8963 0.8963 1"/>
+		<textHighlightedColor value="0.8963 0.8963 0.8963 1"/>
+		<textMaxNumLines value="1"/>
+		<textMaxWidth value="300px"/>
+		<textAutoWidth value="false"/>
+	</Profile>
+</GUIProfiles>

@@ -1,0 +1,31 @@
+# Only what a player needs to RUN a mod is published.
+#
+# Design notes, research and the offline test harness stay on the local machine — they are
+# not requirements for using the mod, and the harness vendors data from Realistic Livestock
+# that is not ours to redistribute.
+
+# --- design and working notes -------------------------------------------------
+# Every .md is local by default. LICENSE has no extension so it is unaffected;
+# README.md is force-added below because it tells a downloader what they need.
+*.md
+!README.md
+
+# --- development tooling ------------------------------------------------------
+# The offline harness. Also holds a copy of Realistic Livestock's xml/ for testing,
+# which must never be published — RL is GPLv3 and belongs to its own authors.
+test/
+scratchpad/
+
+# --- source assets ------------------------------------------------------------
+# Working files for the icons. The built .dds ship; their sources do not.
+_source_icon.png
+*.xcf
+*.psd
+
+# --- build output and local clutter -------------------------------------------
+*.zip
+graphify-out/
+graphify-merged/
+.DS_Store
+Thumbs.db
+desktop.ini

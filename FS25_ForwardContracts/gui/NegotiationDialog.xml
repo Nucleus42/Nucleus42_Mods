@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<GUI name="forwardContractsNegotiation">
+	<!-- STRUCTURE TAKEN FROM FS25_NucleusCommand's dialogs, which solved this properly:
+	     newLayer marker, then a full-screen dim, then the panel as a SIBLING of the dim.
+	     Do not "simplify" this back into a backdrop Bitmap wrapping the panel.
+
+	     1. <GuiElement profile="newLayer"/> IS THE FIX, and it must come first.
+	        GuiElement:draw calls new2DLayer() only when the profile sets newLayer
+	        (scripts/gui/elements/GuiElement.lua:515-517). Without it the dialog shares the
+	        in-game menu's 2D layer and the menu's text composites OVER our panel, however
+	        opaque the panel is. Two earlier attempts chased this as a colour problem and
+	        then as a geometry problem. It was neither. Confirmed in play 2026-07-28.
+
+	     2. id="dialogBg" and id="dialogElement" are CONTRACTUAL NAMES, not decoration.
+	        MessageDialog:onOpen looks up exactly these ids and applies the base-game dim and
+	        panel profiles to them (scripts/gui/dialogs/MessageDialog.lua:60-73). Ours used
+	        name= rather than id=, so both resolved to nil and none of that ever ran.
+
+	     3. dialogFullscreenBg is a base-game global profile for the full-screen dim, proven
+	        reachable from a mod by Nucleus Command. Do not hand-roll a replacement: the
+	        hand-rolled fc_dialogBackdrop used a top-edge pivot at y=0, and GUI y=0 is the
+	        BOTTOM of the screen, so it hung below the viewport and drew nothing at all. -->
+
+	<GuiElement profile="newLayer"/>
+	<Bitmap profile="dialogFullscreenBg" id="dialogBg"/>
+
+	<Bitmap profile="fc_dialogBg" id="dialogElement">
+
+		<Text profile="fc_dialogTitle" id="dialogTitle" text=""/>
+		<Text profile="fc_dialogText" id="dialogBody" text=""/>
+
+		<MultiTextOption profile="fc_dialogOption" id="askOption"
+			position="50px -420px" onClick="onAskChanged"/>
+
+		<MultiTextOption profile="fc_dialogOption" id="mixOption"
+			position="560px -420px" onClick="onMixChanged"/>
+
+		<Text profile="fc_dialogText" id="termsPreview" position="50px -500px"
+			size="1000px 120px" text=""/>
+
+		<Button profile="fc_dialogButton" id="offerButton" position="50px 40px"
+			text="Make offer" onClick="onClickOffer"/>
+
+		<Button profile="fc_dialogButton" id="acceptButton" position="390px 40px"
+			text="Accept counter" onClick="onClickAcceptCounter"/>
+
+		<Button profile="fc_dialogButton" id="walkButton" position="730px 40px"
+			text="Walk away" onClick="onClickWalk"/>
+
+	</Bitmap>
+</GUI>
