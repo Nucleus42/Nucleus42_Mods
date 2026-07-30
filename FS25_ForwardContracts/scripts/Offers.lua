@@ -80,6 +80,18 @@ Offers.WORKLOAD_HEAD = "head"
 
 Offers.MAX_SPOT_OFFERS = 2
 
+-- Quiet days after the board's last spot order leaves — taken or lapsed — before a new batch
+-- appears. See Offers:refreshSpotOffers for why this exists at all.
+--
+-- 3 days, matching OFFER_LIFETIME_DAYS. With a 1-2 day fuse that is a ~4-5 day cycle, so a
+-- DEFAULT 12-DAY YEAR sees roughly 2-3 batches — about 5 spot orders a year, at £660-£5,100
+-- each. Opportunistic money that shows up now and then, which is the brief.
+--
+-- **THIS IS A FEEL NUMBER AND IT IS THE USER'S TO SET.** Nothing derives it; it is picked to
+-- make the cycle land near a handful a year at default settings, and it scales naturally
+-- because a longer daysPerPeriod stretches the year around it.
+Offers.SPOT_COOLDOWN_DAYS = 3
+
 -- Spot orders pay above market. Simple raw products sit at the bottom of the band and
 -- processed goods at the top — a bale of straw is a phone call, a tank of milk is a
 -- logistics problem. Derived, not tabulated: see getComplexity.
@@ -408,6 +420,11 @@ function Offers.new(contractStore)
 
 	self.sellableCache = nil
 
+	-- [farmId] = monotonic day the next batch of spot orders may appear. See refresh.
+	-- Not persisted: losing it costs one extra quiet cycle after a load, which is a far
+	-- cheaper failure than a save format change.
+	self.spotResumeDay = {}
+
 	return self
 end
 
@@ -641,10 +658,19 @@ function Offers:refresh(farmId)
 		supplyCount = supplyCount + 1
 	end
 
-	while spotCount < Offers.MAX_SPOT_OFFERS do
-		self:createSpotOffer(farmId, candidates, tier, processed)
-		spotCount = spotCount + 1
-	end
+	-- SPOT ORDERS ARRIVE AS A BATCH AND ARE NEVER TOPPED UP. User ruling 2026-07-31:
+	-- *"They should only regen when the previous ones have lapsed... These are 'one off'
+	-- contracts that are not supposed to add to workload in any meaningful way."*
+	--
+	-- The old loop refilled to MAX_SPOT_OFFERS every single day, so TAKING one summoned its
+	-- replacement the next morning and the board became a conveyor belt. Two always standing,
+	-- refreshed daily on a 1-2 day fuse, is 12-24 orders across a default 12-day year — an
+	-- income stream by accident, which is exactly what a spot order must not be.
+	--
+	-- Now: the board empties, a quiet gap follows, then a fresh batch. Accepting and lapsing
+	-- are treated identically on purpose — the gap is the point, and making acceptance refill
+	-- faster would reward hoovering them up.
+	self:refreshSpotOffers(farmId, spotCount, candidates, tier, processed)
 
 	-- OFFERS SHOWN, not contracts signable. How many a farm may hold is the single CONTRACT
 	-- BUDGET (§6), checked inside createAnimalOffer against what is actually signed across every
@@ -1922,6 +1948,43 @@ function Offers:acceptAnimalOffer(offer)
 	self:removeOffer(offer.id)
 
 	return contract
+end
+
+--- Decide whether a new BATCH of spot orders is due, and post it if so.
+---
+--- Three states, and the middle one is the whole feature:
+---
+---   * orders still on the board  -> nothing to do, and the timer is cleared so the gap is
+---                                   measured from the moment the board actually empties
+---   * board just emptied         -> start the cooldown, post nothing
+---   * cooldown served            -> post a fresh batch
+---
+--- Called from refresh on DAY_CHANGED, so "day" is the only resolution available and the
+--- only one that matters.
+function Offers:refreshSpotOffers(farmId, spotCount, candidates, tier, processed)
+	local today = g_currentMission.environment.currentMonotonicDay
+
+	if spotCount > 0 then
+		self.spotResumeDay[farmId] = nil
+		return
+	end
+
+	local resumeDay = self.spotResumeDay[farmId]
+
+	if resumeDay == nil then
+		self.spotResumeDay[farmId] = today + Offers.SPOT_COOLDOWN_DAYS
+		return
+	end
+
+	if today < resumeDay then
+		return
+	end
+
+	self.spotResumeDay[farmId] = nil
+
+	for _ = 1, Offers.MAX_SPOT_OFFERS do
+		self:createSpotOffer(farmId, candidates, tier, processed)
+	end
 end
 
 --- Spot orders are take-it-or-leave-it: a set price, no haggling, short fuse.
