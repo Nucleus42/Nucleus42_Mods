@@ -952,6 +952,111 @@ function Offers.getLitresPerAnimalYear(fillTypeIndex)
 	return perDay * daysPerPeriod * Environment.PERIODS_IN_YEAR
 end
 
+-- ---------------------------------------------------------------------------
+-- The coverage hint
+-- ---------------------------------------------------------------------------
+
+--- ⚠ THIS REVERSES A DO-NOT-RESTORE. Read this before touching it. 2026-07-31.
+---
+--- §5.5's reachability check was REMOVED on 2026-07-30 under *"state the terms; never assess
+--- the player's ability to meet them"*, and `createProductOffer` still carries the words
+--- "Do not reinstate the snapshot". This is not that check coming back.
+---
+--- What was withdrawn was a CALCULATOR — "you produce 412 l/yr and need 1,600" — which did
+--- the player's planning for them. What this is, is a NUDGE that refuses to say how big the
+--- gap is. The user's ruling, 2026-07-31:
+---
+---   *"I absolutely must be vague. We want to offer as little as possible so the user has to
+---   research and plan before signing the contract... A little nudge in the right direction
+---   is fair game."*
+---
+--- **THE VAGUENESS IS THE MECHANISM, NOT A LIMITATION.** These strings must never carry a
+--- number, a ratio, a shortfall or a word of degree. "Considerably more land than you own"
+--- was drafted and rejected for exactly that: *"Considerably tells them too much."* If you
+--- are ever tempted to make a hint more helpful, that is the signal to leave it alone.
+---
+--- Returns an l10n key, or nil for "say nothing" — which is the commonest outcome by design.
+---
+--- SUPPLY and BREEDING contracts get no hint at all. They already name a head count, and the
+--- user's reason is the framing: *"They see 'I need to provide 27 Black Pied boars that
+--- are… and I'll get paid £x for doing it'."* A number is its own nudge.
+Offers.COVERAGE_BANDS = {
+	-- Crops, measured against FIELD hectares owned. Ordered worst-first; the first band the
+	-- ratio clears wins, and falling through them all means silence.
+	hectares = {
+		{ ratio = 1.50, key = "fc_hint_land_beyond" },
+		{ ratio = 0.75, key = "fc_hint_land_most" },
+		{ ratio = 0.25, key = "fc_hint_land_share" },
+	},
+	-- Animal products, measured against head that produce the fill type.
+	head = {
+		{ ratio = 2.00, key = "fc_hint_herd_beyond" },
+		{ ratio = 1.00, key = "fc_hint_herd_stretch" },
+	},
+}
+
+function Offers:getCoverageHint(farmId, fillTypeIndex, quotaPerYear)
+	local implied, unit = Offers.getImpliedWorkload(fillTypeIndex, quotaPerYear)
+
+	if implied == nil then
+		return nil
+	end
+
+	local owned
+
+	if unit == Offers.WORKLOAD_HECTARES then
+		owned = Offers.getOwnedFieldHectares(farmId)
+	elseif unit == Offers.WORKLOAD_HEAD then
+		owned = self.animals ~= nil and self.animals:countProducingAnimals(farmId, fillTypeIndex)
+			or nil
+	end
+
+	if owned == nil then
+		return nil
+	end
+
+	-- Owning NOTHING is the loudest case and must not divide by zero.
+	if owned <= 0 then
+		local bands = Offers.COVERAGE_BANDS[unit]
+		return bands ~= nil and bands[1] ~= nil and bands[1].key or nil
+	end
+
+	local ratio = implied / owned
+
+	for _, band in ipairs(Offers.COVERAGE_BANDS[unit] or {}) do
+		if ratio >= band.ratio then
+			return band.key
+		end
+	end
+
+	return nil
+end
+
+--- Hectares of FIELD this farm owns.
+---
+--- Fields, not farmland parcels. `farmland.areaInHa` counts the whole title — woodland, yard
+--- and all — so a farm with 200 ha of forest would be told it had plenty of room for wheat.
+--- `Field:getAreaHa` and `Field:getOwner` (`field/Field.lua:135`, `:148`) count only what can
+--- actually be cropped.
+function Offers.getOwnedFieldHectares(farmId)
+	local manager = g_fieldManager
+
+	if manager == nil or manager.getFields == nil then
+		return nil
+	end
+
+	local total = 0
+
+	for _, field in pairs(manager:getFields()) do
+		if field ~= nil and field.getOwner ~= nil and field.getAreaHa ~= nil
+			and field:getOwner() == farmId then
+			total = total + (field:getAreaHa() or 0)
+		end
+	end
+
+	return total
+end
+
 function Offers:createSupplyOffer(farmId, candidates, tier, reputation, processed, contractType,
 	forcedClient)
 	if #candidates == 0 then
@@ -1000,6 +1105,10 @@ function Offers:createSupplyOffer(farmId, candidates, tier, reputation, processe
 		-- nil for an ordinary crop contract, "PRODUCT" for an animal's output. The board and
 		-- ContractStore both read it; a crop contract simply never sets it.
 		contractType = contractType,
+
+		-- Refreshed daily in onDayChanged, not only here: a player who buys a field or sells
+		-- a flock should not be reading a hint from three days ago.
+		coverageHint = self:getCoverageHint(farmId, pick.fillTypeIndex, quotaPerYear),
 
 		expiryDay = g_currentMission.environment.currentMonotonicDay + Offers.OFFER_LIFETIME_DAYS,
 	}
@@ -2151,6 +2260,16 @@ function Offers:onDayChanged()
 
 	-- Station prices move daily, so a cached market rate goes stale.
 	self.sellableCache = nil
+
+	-- Re-read the coverage hints. Land and herds change between day changes, and a stale
+	-- nudge is worse than none — it would be telling the player something about a farm they
+	-- no longer have. Once a day, not per frame: this walks every field and every animal.
+	for _, offer in ipairs(self.offers) do
+		if offer.quotaPerYear ~= nil and offer.kind ~= Offers.KIND_ANIMAL then
+			offer.coverageHint =
+				self:getCoverageHint(offer.farmId, offer.fillTypeIndex, offer.quotaPerYear)
+		end
+	end
 
 	for _, farm in ipairs(g_farmManager:getFarms()) do
 		if farm.farmId ~= FarmManager.SPECTATOR_FARM_ID then

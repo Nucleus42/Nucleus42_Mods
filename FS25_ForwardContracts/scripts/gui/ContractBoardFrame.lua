@@ -430,6 +430,21 @@ end
 
 --- How you stand with this client, in words rather than a hidden number.
 ---
+--- The coverage nudge, as its own paragraph, or nothing at all.
+---
+--- Nothing at all is the COMMON case and is deliberate — a contract the farm can comfortably
+--- cover says nothing, because there is nothing the player needs prodding about.
+---
+--- Never add a number here, and never expand this into a sentence that explains itself.
+--- See Offers.getCoverageHint for the ruling behind that; the vagueness is the mechanic.
+function ContractBoardFrame.describeCoverage(offer)
+	if offer.coverageHint == nil then
+		return ""
+	end
+
+	return "\n\n" .. g_i18n:getText(offer.coverageHint)
+end
+
 --- Relationship is doing real work in the negotiation — it lifts their opening offer and
 --- their ceiling and softens how hard they argue — so the player has to be able to see
 --- that a familiar buyer is worth more than a stranger.
@@ -769,25 +784,27 @@ function ContractBoardFrame:describeDetail(entry)
 	if offer.contractType == "PRODUCT" then
 		return ContractBoardFrame.describeContractType(offer),
 			string.format(
-				"%s wants %s of %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
+				"%s wants %s of %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.%s\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
 				offer.client.name,
 				g_i18n:formatVolume(offer.quotaPerYear),
 				productName(offer.fillTypeIndex),
 				offer.years,
 				g_i18n:formatMoney(offer.marketValue, 0, true, true),
 				offer.suggestedStation or "—",
+				ContractBoardFrame.describeCoverage(offer),
 				ContractBoardFrame.describeStanding(offer.client)),
 			g_i18n:getText("fc_button_negotiate")
 	end
 
 	return productName(offer.fillTypeIndex),
 		string.format(
-			"%s wants %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
+			"%s wants %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.%s\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
 			offer.client.name,
 			g_i18n:formatVolume(offer.quotaPerYear),
 			offer.years,
 			g_i18n:formatMoney(offer.marketValue, 0, true, true),
 			offer.suggestedStation or "—",
+			ContractBoardFrame.describeCoverage(offer),
 			ContractBoardFrame.describeStanding(offer.client)),
 		g_i18n:getText("fc_button_negotiate")
 end

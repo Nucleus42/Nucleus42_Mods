@@ -1754,6 +1754,38 @@ function Animals.getPeakOutputPerDay(fillTypeIndex)
 	return best
 end
 
+--- How many animals this farm owns that produce this fill type at all.
+---
+--- Counted by SUBTYPE, not by current output, and that handles gender for free: RL makes
+--- CHICKEN and CHICKEN_ROOSTER separate subtypes and only the hen carries an EGG output, so
+--- a cockerel is excluded without anything having to know what a cockerel is.
+---
+--- Young stock IS counted even though it produces nothing today. A contract runs for years,
+--- and a flock of point-of-lay pullets can plainly cover one. The figure feeds a deliberately
+--- vague hint (Offers.getCoverageHint), so being exact would be wasted precision.
+function Animals:countProducingAnimals(farmId, fillTypeIndex)
+	if fillTypeIndex == nil then
+		return 0
+	end
+
+	local count = 0
+
+	for _, entry in ipairs(self:getAnimals(farmId)) do
+		local animal = entry.animal
+
+		if animal ~= nil and animal.getSubType ~= nil then
+			local ok, subType = pcall(animal.getSubType, animal)
+
+			if ok and type(subType) == "table"
+				and Animals.getProductOutput(subType) == fillTypeIndex then
+				count = count + 1
+			end
+		end
+	end
+
+	return count
+end
+
 --- Every subtype that produces this fill type, for gating PRODUCT offers.
 function Animals:getProducingSubTypes(fillTypeIndex)
 	local result = {}

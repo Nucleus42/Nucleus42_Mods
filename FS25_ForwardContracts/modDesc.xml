@@ -121,6 +121,27 @@ Requires Realistic Livestock (Ritter version).]]></en>
 			<en>Contract shortfall</en>
 		</text>
 
+		<!-- COVERAGE HINTS. A nudge, never a calculation.
+		     These strings must never contain a number, a ratio, a shortfall or a word of
+		     degree. "Considerably more land than you own" was drafted and rejected because
+		     "considerably" quantifies. The vagueness IS the feature: the player is meant to
+		     go and work it out. See Offers.getCoverageHint. -->
+		<text name="fc_hint_land_share">
+			<en>This will take a good share of your land.</en>
+		</text>
+		<text name="fc_hint_land_most">
+			<en>You would need most of your land, or more.</en>
+		</text>
+		<text name="fc_hint_land_beyond">
+			<en>Your current land can't manage this.</en>
+		</text>
+		<text name="fc_hint_herd_stretch">
+			<en>Your current herd would be stretched by this.</en>
+		</text>
+		<text name="fc_hint_herd_beyond">
+			<en>Your current herd can't cover these numbers.</en>
+		</text>
+
 		<text name="fc_detail_emptyTitle">
 			<en>Nothing here yet</en>
 		</text>
