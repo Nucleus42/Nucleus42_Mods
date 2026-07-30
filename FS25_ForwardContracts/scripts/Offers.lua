@@ -772,6 +772,12 @@ function Offers:createProductOffer(farmId, candidates, tier, reputation, process
 	-- sign and fail they get punished."* The contract states its quota; working out whether the
 	-- herd can cover it is the game, and the penalty, reputation loss and relationship damage for
 	-- missing already exist. Do not reinstate the snapshot.
+	--
+	-- ⚠ PARTLY SUPERSEDED 2026-07-31 — read `Offers.getCoverageHint` before acting on the
+	-- paragraph above. The offer now carries a one-line NUDGE ("your current herd can't cover
+	-- these numbers") which does read the herd. What stays banned is what was actually
+	-- withdrawn: the CALCULATION, and any figure, ratio or shortfall derived from it. The hint
+	-- may never say how big the gap is. *"I absolutely must be vague."*
 	return self:createSupplyOffer(farmId, candidates, tier, reputation, processed,
 		Offers.KIND_ANIMAL_PRODUCT, client)
 end
