@@ -730,8 +730,44 @@ function ContractBoardFrame:describeDetail(entry)
 			g_i18n:getText("fc_button_accept")
 	end
 
+	-- LIVESTOCK. Counted in HEAD, priced per head, and posted rather than negotiated — so it
+	-- shares none of the crop wording below. Reconstructed 2026-07-30 after a scripted edit
+	-- overwrote this branch with the product body; the panel read "wants 41 l of ?", the 41
+	-- being a headcount run through formatVolume and the "?" a nil fill type.
 	if offer.unit == ContractStore.UNIT_HEAD then
-			return ContractBoardFrame.describeContractType(offer),
+		return ContractBoardFrame.describeContractType(offer),
+			string.format(
+				"%s wants %d animals per year for %d years.\n\n%s\nCompletion bonus: %s each year you meet the quota.\nEverything included, that is roughly %s over the term.\n\nRequirement: %s\n%s\n\n%s\n\n%s\n\nFixed terms, no negotiation. Breeding better does not raise this contract — it raises the next one.",
+				offer.client.name,
+				offer.quotaPerYear,
+				offer.years,
+
+				-- The ladder line included: at an offer this is the player's first sight of why
+				-- the rate sits where it does, and §0.6's framing rule says a below-market entry
+				-- rung must never read as simply a bad deal.
+				ContractBoardFrame.describeMultiplier(offer, true),
+
+				g_i18n:formatMoney(offer.completionBonus or 0, 0, true, true),
+				g_i18n:formatMoney(offer.marketValue, 0, true, true),
+
+				-- The genetic specification, in RL's own words. Omitting this was BUG B on the
+				-- first run: the contract enforced a band it never stated.
+				self:describeAnimalFloors(offer),
+				self:describeAnimalStock(offer),
+				ContractBoardFrame.describeCrossover(offer),
+				ContractBoardFrame.describeStanding(offer.client)),
+
+			-- ACCEPT, not negotiate. Livestock is posted (§3.3) and `onActivateEntry` routes it
+			-- to the posted-terms path, so a "negotiate" label here would promise a haggle the
+			-- player never gets.
+			g_i18n:getText("fc_button_accept")
+	end
+
+	-- PRODUCT. Mechanically the crop contract with a different fill type (§5.2) — same kind,
+	-- same unit, same negotiation, same settlement — so it uses the crop body and differs only
+	-- in naming the product and carrying the produce label.
+	if offer.contractType == "PRODUCT" then
+		return ContractBoardFrame.describeContractType(offer),
 			string.format(
 				"%s wants %s of %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
 				offer.client.name,
