@@ -1712,6 +1712,48 @@ function Animals.isJobAnimal(subType)
 	return (peakValue / dailyValue) < Animals.JOB_ANIMAL_PAYBACK_DAYS
 end
 
+--- Peak LITRES A DAY one animal of this fill type's best producer makes.
+---
+--- The counterpart of getPeakDailyProductValue with the price taken back out, because
+--- `Offers.getLitresPerAnimalYear` needs the volume rather than the money. Static and
+--- price-free, so it does not move when the economy does.
+---
+--- The BEST producer, not an average: a contract naming MILK is judgeable against the herd
+--- a player would actually keep for it, and stating the figure for the worst dairy breed on
+--- the map would understate every sensible herd.
+---
+--- Curves are per DAY — `PlaceableHusbandryPallets.lua:239` and
+--- `PlaceableHusbandryFood.lua:509` both take `litersPerDay` and divide by 24.
+function Animals.getPeakOutputPerDay(fillTypeIndex)
+	if fillTypeIndex == nil then
+		return 0
+	end
+
+	local system = g_currentMission ~= nil and g_currentMission.animalSystem or nil
+
+	if system == nil or system.subTypes == nil then
+		return 0
+	end
+
+	local best = 0
+
+	for _, subType in ipairs(system.subTypes) do
+		local produced, curve = Animals.getProductOutput(subType)
+
+		if produced == fillTypeIndex and curve ~= nil and curve.get ~= nil then
+			for age = 0, Animals.MAX_SAMPLE_AGE * 2 do
+				local ok, rate = pcall(curve.get, curve, age)
+
+				if ok and type(rate) == "number" and rate > best then
+					best = rate
+				end
+			end
+		end
+	end
+
+	return best
+end
+
 --- Every subtype that produces this fill type, for gating PRODUCT offers.
 function Animals:getProducingSubTypes(fillTypeIndex)
 	local result = {}

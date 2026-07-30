@@ -22,16 +22,61 @@ Offers.KIND_SPOT = ContractStore.KIND_SPOT
 -- Reputation tiers. Low reputation means small, short and few — not because of an
 -- artificial gate but because nobody signs a decade-long agreement with a stranger
 -- (HANDOFF.md §10: entry contracts are small deliveries, deliberately).
+--
+-- ⚠ `quotaScale` AND `BASE_ANNUAL_QUOTA` ARE GONE. DO NOT RESTORE THEM. 2026-07-31.
+--
+-- Crop, PRODUCT and SPOT contracts decided LITRES first — a flat 60,000 l/yr scaled by
+-- tier — and let the money fall out of whatever the market happened to pay. That is the
+-- SAME FAULT §4.1 rejected for livestock, in a different unit. §4.1 threw out a flat
+-- headcount because *"25 head is 25 head whether that is chickens at £25 or horses at
+-- £5,229"*; a flat litre quota is identical, because 60,000 l of straw and 60,000 l of
+-- honey are "the same contract" and differ by 60:1 in money in a stock game.
+--
+-- Measured 2026-07-30 at 60,000 l/yr, vanilla, hard economy: STRAW £2,460/yr against
+-- OLIVE_OIL £146,400/yr. Both cost one slot of the same budget.
+--
+-- `annualValue` is now the year's intended GROSS, and litres are derived from it — the
+-- same order livestock has always used (`head = money / anchor`). The rungs are SHARED
+-- WITH `ANIMAL_TIERS.supplyValue` on purpose: one budget, one pool of slots, so a slot
+-- must be worth the same whatever it is spent on. User ruling 2026-07-31.
+--
+-- Four rungs, not five: tier 4 does not split 4a/4b here because a crop has no genetics
+-- to raise the bar with.
+--
+-- NO WORKLOAD CAP, and the absence is deliberate. `ANIMAL_TIER1_STANDING_CAP` exists
+-- because poultry's ENTRY rung came out bigger than its top rung — the ladder inverted.
+-- That cannot happen here: `litres = money / rate`, the rate is fixed within a save, and
+-- the money climbs, so the litres climb, for every fill type in every economy. A large
+-- contract is therefore just a large contract, and judging whether it can be met is the
+-- player's job (LIVESTOCK_DESIGN, "do not baby the player").
+--
+-- NOT SCALED BY ECONOMIC DIFFICULTY EITHER, and that is also a ruling rather than an
+-- oversight. `EconomyManager.PRICE_MULTIPLIER` is `{3, 1.8, 1}` for easy/normal/hard and
+-- applies to fill types only (`SellingStation.lua:400`) — never to animal sale prices
+-- (`AnimalCluster.lua:195`). So on EASY a fixed £ ladder buys a third of the land it buys
+-- on HARD. The user's decision, 2026-07-31: *"If someone is playing on easy they either
+-- don't want the grind or they are new to the game... this mod should honour that."*
+-- The numbers in the design notes were reasoned on HARD.
 Offers.TIERS = {
-	{ minReputation = 0.00, slots = 1, years = { 1, 2 }, quotaScale = 0.35 },
-	{ minReputation = 0.25, slots = 2, years = { 2, 3 }, quotaScale = 0.60 },
-	{ minReputation = 0.50, slots = 3, years = { 3, 5 }, quotaScale = 1.00 },
-	{ minReputation = 0.75, slots = 4, years = { 4, 8 }, quotaScale = 1.60 },
+	{ minReputation = 0.00, slots = 1, years = { 1, 2 }, annualValue = 30000 },
+	{ minReputation = 0.25, slots = 2, years = { 2, 3 }, annualValue = 42000 },
+	{ minReputation = 0.50, slots = 3, years = { 3, 5 }, annualValue = 60000 },
+	{ minReputation = 0.75, slots = 4, years = { 4, 8 }, annualValue = 85000 },
 }
 
--- Litres per year at quotaScale 1.0, before the tier multiplier. A middling contract
--- should be a season's work, not a morning's.
-Offers.BASE_ANNUAL_QUOTA = 60000
+-- Spread applied to a contract's VALUE, not to its litres. It used to sit on the quota,
+-- which re-floated the very number the money ladder exists to fix — two tier-3 offers
+-- would have been worth £45k and £75k while both claiming to be the same rung.
+--
+-- The negotiation needs something to bite on and this is it: the client's reservation is
+-- a fraction of market VALUE (`Negotiation.PARAMS.reservation`), so a contract with no
+-- value spread would haggle identically every time.
+Offers.VALUE_VARIANCE = { 0.75, 1.25 }
+
+-- Units the board may describe a contract's size in, beside its litres. See
+-- Offers.getImpliedWorkload.
+Offers.WORKLOAD_HECTARES = "hectares"
+Offers.WORKLOAD_HEAD = "head"
 
 Offers.MAX_SPOT_OFFERS = 2
 
@@ -40,7 +85,29 @@ Offers.MAX_SPOT_OFFERS = 2
 -- logistics problem. Derived, not tabulated: see getComplexity.
 Offers.SPOT_PREMIUM = { 0.10, 0.20 }
 Offers.SPOT_DURATION_DAYS = { 1, 2 }
-Offers.SPOT_QUOTA_SHARE = { 0.08, 0.20 }
+
+-- Share of the RUNG'S ANNUAL VALUE a single spot order is worth. Cut from 0.08-0.20 to
+-- 0.02-0.05 on 2026-07-31 — REBASED, not rebalanced, and the distinction matters.
+--
+-- These constants were calibrated against the old flat 60,000 l quota. Re-pointing them at
+-- the money ladder silently inflated them, because 20% of £85,000 is far more than 20% of
+-- `60,000 l x 1.6 x £0.337`. A top-rung wheat order went from about £7,800 to £20,400
+-- without anybody choosing that.
+--
+-- The user's ruling, on being shown it: *"They are a 'hey here is a quick way of making a
+-- bit of extra money'. They are very opportunistic and should never be used as a concrete
+-- income stream."*
+--
+-- 0.02-0.05 puts a TIER-1 order at £660-£1,800, which is within a whisker of the £623-£1,698
+-- the old constants produced at that rung — so the entry feel is restored rather than
+-- invented, and only the top of the ladder is flattened. Tier 4 lands at £1,870-£5,100.
+--
+-- **THE LADDER MUST STAY SHALLOW HERE.** Spot orders sit OUTSIDE the contract budget
+-- (see Offers:refresh — the spot loop has no `remaining` check), two stand at once, and they
+-- refresh on DAY_CHANGED with a 1-2 day fuse. That is roughly 12-24 offers across a
+-- default 12-day year. At the old share a fully-stocked tier-4 farm could clear more from
+-- spot orders than from every signed contract combined, which is precisely backwards.
+Offers.SPOT_QUOTA_SHARE = { 0.02, 0.05 }
 
 -- How long an offer sits on the board before it lapses.
 Offers.OFFER_LIFETIME_DAYS = 3
@@ -713,8 +780,8 @@ function Offers:forceProductOffer(farmId, reputation, overrides)
 		return nil
 	end
 
-	-- Products scale off the CROP tier table, not ANIMAL_TIERS: the quota is
-	-- `BASE_ANNUAL_QUOTA x quotaScale` and there are four rungs, not five (§5.1, kept).
+	-- Products scale off the CROP tier table, not ANIMAL_TIERS: four rungs, not five, and
+	-- the quota is derived from `annualValue` at the going rate like any other fill type.
 	local tier = Offers.TIERS[overrides.tier or 0] or self:getTier(reputation)
 
 	local client
@@ -725,6 +792,138 @@ function Offers:forceProductOffer(farmId, reputation, overrides)
 
 	return self:createProductOffer(farmId, products, tier, reputation,
 		self:getProcessedFillTypes(), client)
+end
+
+-- ---------------------------------------------------------------------------
+-- Money first, quantity derived
+-- ---------------------------------------------------------------------------
+
+--- The gross this contract intends to be worth in a year, before negotiation.
+---
+--- Pure, and static rather than a method, so `test/animals_harness.lua` can assert the
+--- ladder without a mission.
+function Offers.rollAnnualValue(tier, client)
+	local low, high = Offers.VALUE_VARIANCE[1], Offers.VALUE_VARIANCE[2]
+	local variance = low + math.random() * (high - low)
+
+	return (tier.annualValue or 0) * ((client ~= nil and client.size) or 1) * variance
+end
+
+--- Litres a year that gross implies at the going rate. `nil` when the rate is unusable —
+--- the caller must not offer a contract it cannot size.
+---
+--- `marketRate` is the best station's EFFECTIVE price, so the economic difficulty
+--- multiplier, the seasonal factor, the station markup and the random drift are all
+--- already inside it (`SellingStation.lua:400`). That is deliberate: change the
+--- difficulty and every contract re-sizes itself with no table to maintain.
+---
+--- The seasonal component means the month an offer is generated moves its size — measured
+--- 2026-07-31 at 1.21x (milk) to 1.76x (eggs) peak-to-trough. Left in: the design already
+--- applies a deliberate 1.67x spread in `VALUE_VARIANCE`, holding out for a seasonal peak
+--- costs an idle budget slot, and striking a price at a good moment is what a forward
+--- contract IS. Raised as a fault and withdrawn on the numbers — do not "fix" it.
+function Offers.deriveQuota(annualValue, marketRate)
+	if type(marketRate) ~= "number" or marketRate <= 0 then
+		return nil
+	end
+
+	local litres = math.floor(annualValue / marketRate)
+
+	return litres > 0 and litres or nil
+end
+
+--- What a quota implies the player must farm, in the natural unit of its kind: hectares
+--- for a crop, head for an animal product. Returns `nil, nil` when neither applies —
+--- processed goods have no land and no herd, and inventing a figure for them would be
+--- worse than printing none.
+---
+--- INFORMATIONAL ONLY. The contract's binding term is LITRES, because litres is all a
+--- delivery can be measured in — `DeliveryWatch` sees `fillDelta` at the till and has no
+--- idea whose field it came off. This exists so the board can state the size of the job in
+--- a unit a human can judge, the way headcount already does for livestock.
+---
+--- The hectare figure assumes MAXIMUM YIELD, and anything cut more than once a year (grass)
+--- is overstated because it counts a single harvest. Label it as approximate.
+function Offers.getImpliedWorkload(fillTypeIndex, quotaPerYear)
+	if fillTypeIndex == nil or type(quotaPerYear) ~= "number" or quotaPerYear <= 0 then
+		return nil, nil
+	end
+
+	local litresPerHectare = Offers.getLitresPerHectare(fillTypeIndex)
+	if litresPerHectare ~= nil and litresPerHectare > 0 then
+		return quotaPerYear / litresPerHectare, Offers.WORKLOAD_HECTARES
+	end
+
+	local litresPerAnimal = Offers.getLitresPerAnimalYear(fillTypeIndex)
+	if litresPerAnimal ~= nil and litresPerAnimal > 0 then
+		return quotaPerYear / litresPerAnimal, Offers.WORKLOAD_HEAD
+	end
+
+	return nil, nil
+end
+
+--- Litres a hectare yields, from the map's own foliage data.
+---
+--- `literPerSqm * 10000 * 2` is GIANTS' OWN per-hectare figure, not an invention — see
+--- `FruitTypeDesc.lua:755`, where the result is assigned to a local called `literPerHa`,
+--- and Precision Farming's `NitrogenMap.lua:1443`, which applies the same doubling.
+---
+--- DO NOT use `FruitTypeManager:getFillTypeLiterPerSqm` here. It returns the WINDROW rate
+--- whenever the fruit type has one, so it answers WHEAT with straw's 3.68 and claims a
+--- hectare of wheat yields 73,600 l.
+function Offers.getLitresPerHectare(fillTypeIndex)
+	local manager = g_fruitTypeManager
+	if manager == nil then
+		return nil
+	end
+
+	local fruitType = manager.getFruitTypeByFillTypeIndex ~= nil
+		and manager:getFruitTypeByFillTypeIndex(fillTypeIndex) or nil
+
+	if type(fruitType) == "table" and (fruitType.literPerSqm or 0) > 0 then
+		return fruitType.literPerSqm * 10000 * 2
+	end
+
+	-- A BYPRODUCT — straw, grass windrow, hay. It is not the harvest of any fruit type, so
+	-- the lookup above misses it entirely; it is the `<windrow>` of one. User ruling
+	-- 2026-07-31: these stay on the board, because *"a farm still needs infrastructure to
+	-- farm these and it is up to the user to identify the easier work."*
+	--
+	-- The hectares reported are the PARENT crop's, which is the honest number: you do not
+	-- grow straw, you get it free with the wheat you were combining anyway.
+	if manager.getFruitTypes ~= nil and manager.getWindrowFillTypeIndexByFruitTypeIndex ~= nil then
+		for index, candidate in pairs(manager:getFruitTypes()) do
+			if manager:getWindrowFillTypeIndexByFruitTypeIndex(index) == fillTypeIndex
+				and (candidate.windrowLiterPerSqm or 0) > 0 then
+				return candidate.windrowLiterPerSqm * 10000 * 2
+			end
+		end
+	end
+
+	return nil
+end
+
+--- Litres one animal produces in a YEAR of this save's calendar.
+---
+--- A year is `daysPerPeriod * 12` days, NOT 365 — with the default setting that is TWELVE
+--- days. The output curves are per DAY (verified: `PlaceableHusbandryPallets.lua:239` and
+--- `PlaceableHusbandryFood.lua:509` both divide `litersPerDay` by 24 to get an hourly
+--- rate). Using 365 here overstates every herd by about 30x, which is exactly the error
+--- that briefly made a wool contract look like it needed two sheep.
+function Offers.getLitresPerAnimalYear(fillTypeIndex)
+	if Animals == nil or Animals.getPeakOutputPerDay == nil then
+		return nil
+	end
+
+	local perDay = Animals.getPeakOutputPerDay(fillTypeIndex)
+	if type(perDay) ~= "number" or perDay <= 0 then
+		return nil
+	end
+
+	local environment = g_currentMission ~= nil and g_currentMission.environment or nil
+	local daysPerPeriod = (environment ~= nil and environment.daysPerPeriod) or 1
+
+	return perDay * daysPerPeriod * Environment.PERIODS_IN_YEAR
 end
 
 function Offers:createSupplyOffer(farmId, candidates, tier, reputation, processed, contractType,
@@ -743,10 +942,18 @@ function Offers:createSupplyOffer(farmId, candidates, tier, reputation, processe
 	-- has to be settled before that, not swapped in afterwards.
 	local client = forcedClient or self:getClient(farmId, isProcessed)
 
+	-- MONEY FIRST, LITRES DERIVED — the same order `createAnimalOffer` has always used.
 	-- Client size scales the commitment: a buyer who has grown with you over several
 	-- contracts asks for more than a stranger does (HANDOFF.md §4.1).
-	local quotaPerYear = math.floor(Offers.BASE_ANNUAL_QUOTA * tier.quotaScale
-		* (client.size or 1) * (0.75 + math.random() * 0.5))
+	local annualValue = Offers.rollAnnualValue(tier, client)
+	local quotaPerYear = Offers.deriveQuota(annualValue, pick.marketRate)
+
+	-- No price, no contract. `getEffectiveFillTypePrice` returns a hard 0 when the
+	-- seasonal factor is 0 (`SellingStation.lua:396`), and under the old litres-first
+	-- code that merely produced a worthless offer. Dividing by it is a different matter.
+	if quotaPerYear == nil then
+		return nil
+	end
 
 	local marketValue = Negotiation.getMarketValue(pick.marketRate, quotaPerYear, years)
 
@@ -1728,7 +1935,15 @@ function Offers:createSpotOffer(farmId, candidates, tier, processed)
 	local share = Offers.SPOT_QUOTA_SHARE[1]
 		+ math.random() * (Offers.SPOT_QUOTA_SHARE[2] - Offers.SPOT_QUOTA_SHARE[1])
 
-	local quantity = math.floor(Offers.BASE_ANNUAL_QUOTA * tier.quotaScale * share)
+	-- Money first here too. A spot order is a SLICE of what a contract on this rung would be
+	-- worth, so it has to be sized off the same ladder — left on litres it would have kept
+	-- the exact fault the ladder was introduced to remove, one order of magnitude smaller.
+	local quantity = Offers.deriveQuota(tier.annualValue * share, pick.marketRate)
+
+	if quantity == nil then
+		return nil
+	end
+
 	local duration = math.random(Offers.SPOT_DURATION_DAYS[1], Offers.SPOT_DURATION_DAYS[2])
 
 	local offer = {
