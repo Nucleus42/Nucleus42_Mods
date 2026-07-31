@@ -143,6 +143,27 @@ function ContractStore:signContract(spec)
 		-- buyer AT SIGNING, which is the one that matters for anything delivered over quota.
 		suggestedStation = spec.suggestedStation,
 
+		-- ONE QUOTA FOR THE WHOLE TERM INSTEAD OF ONE PER YEAR. Forestry only, and it is not a
+		-- balance choice — an annual quota makes a tier 2 or 3 forestry contract IMPOSSIBLE TO
+		-- COMPLETE.
+		--
+		-- Those tiers require wood from trees the player planted after signing. Oak matures in
+		-- ~2 years and pine in ~10, so years 1 and 2 have nothing to deliver, the contract
+		-- misses twice, and `MAX_CONSECUTIVE_MISSES` terminates it before a single tree is ready.
+		-- The player did nothing wrong and could not have.
+		--
+		-- Forestry is also lumpy even at tier 1: you fell a stand, deliver a lot at once, then
+		-- there is nothing for a while. Requiring equal litres every year fights the growth
+		-- cycle, which is the one thing this contract line is about.
+		--
+		-- **WHAT IT COSTS, AND IT IS A REAL TRADE.** There is no mid-term pressure and no early
+		-- warning: nothing settles until the final year, so a player can ignore the contract for
+		-- seven years and dump everything in the eighth. The counterweight is that the shortfall
+		-- penalty is charged on the WHOLE TERM'S value, so failing an 8-year deal outright costs
+		-- far more than failing one year of it. Judged correct — the player agreed to a term, and
+		-- the panel shows delivered-of-total throughout.
+		isTermQuota = spec.isTermQuota,
+
 		-- Livestock only. The payment tracks each animal's OWN sale value times this,
 		-- rather than a flat cash rate — a fixed rate would top up less the better the
 		-- animal was, which would reward delivering poor stock (§4.6). `rate` above stays
@@ -208,6 +229,13 @@ function ContractStore:signContract(spec)
 		contract.quotaThisYear = spec.quotaPerYear
 		contract.expiryDay = g_currentMission.environment.currentMonotonicDay
 			+ (spec.durationDays or 1)
+	elseif contract.isTermQuota then
+		-- ONE QUOTA FOR THE WHOLE TERM, settled once at the end. See the field's comment above.
+		--
+		-- No pro-rata. The term is N years from signing, not N calendar years, so there is no
+		-- part-year to scale — and scaling would quietly shrink a commitment the player agreed
+		-- to in full.
+		contract.quotaThisYear = spec.quotaPerYear * (spec.years or 1)
 	else
 		contract.quotaThisYear = math.floor(spec.quotaPerYear * self:getYearFractionRemaining())
 	end
@@ -408,6 +436,18 @@ function ContractStore:onYearChanged()
 end
 
 function ContractStore:settleContractYear(contract)
+	-- A TERM-QUOTA CONTRACT HAS NOTHING TO SETTLE UNTIL ITS LAST YEAR. Advance the clock and
+	-- leave the quota, the delivered total and the miss counter exactly where they are — the
+	-- whole point is that a forestry contract is judged once, on the term.
+	--
+	-- Returning BEFORE `onYearMet`/`onYearMissed` is what makes this safe: those two are the
+	-- only places reputation moves and the only place the penalty is charged, so a mid-term
+	-- year cannot score, cannot penalise and cannot terminate.
+	if contract.isTermQuota and (contract.yearIndex or 1) < (contract.years or 1) then
+		contract.yearIndex = (contract.yearIndex or 1) + 1
+		return
+	end
+
 	local quota = contract.quotaThisYear or 0
 	local delivered = contract.deliveredThisYear or 0
 
@@ -589,6 +629,14 @@ function ContractStore:save()
 			setXMLFloat(xmlFile, key .. "#rateMultiplier", contract.rateMultiplier)
 		end
 
+		-- Losing this on a save/load turns a forestry contract back into an annual one
+		-- mid-term: `settleContractYear` would stop returning early, judge the term total
+		-- against one year's deliveries, and terminate a contract whose trees are still
+		-- growing. Silent, and unrecoverable.
+		if contract.isTermQuota then
+			setXMLBool(xmlFile, key .. "#isTermQuota", true)
+		end
+
 		if contract.subTypeName ~= nil then
 			setXMLString(xmlFile, key .. "#subTypeName", contract.subTypeName)
 		end
@@ -711,6 +759,7 @@ function ContractStore:load()
 				fillTypeIndex = fillTypeIndex,
 				rate = getXMLFloat(xmlFile, key .. "#rate") or 0,
 				rateMultiplier = getXMLFloat(xmlFile, key .. "#rateMultiplier"),
+				isTermQuota = getXMLBool(xmlFile, key .. "#isTermQuota"),
 				suggestedStation = getXMLString(xmlFile, key .. "#suggestedStation"),
 				subTypeName = getXMLString(xmlFile, key .. "#subTypeName"),
 				ageMin = getXMLInt(xmlFile, key .. "#ageMin"),

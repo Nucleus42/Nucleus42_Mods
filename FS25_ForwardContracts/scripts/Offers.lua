@@ -1586,6 +1586,15 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		-- every type ever added, which is the shape of the five-list bug.
 		isPosted = true,
 
+		-- Forestry is judged once, on the whole term. See ContractStore:signContract for why
+		-- an annual quota cannot work for a product that takes years to grow.
+		isTermQuota = true,
+
+		-- What the player is actually committing to, and the number the board should lead with.
+		-- 25,000 l a year reads like a chore; 100,000 l over four years reads like an operation,
+		-- and the second is the honest description of the same deal.
+		quotaTotal = quotaPerYear * years,
+
 		-- No coverage hint on any forestry tier. FORESTRY.md §1.5 ruling 5: there is no honest
 		-- denominator, because any land grows trees. Tier 3's plant-by-date line is the nudge,
 		-- and it is a better one. `getImpliedWorkload` already returns nil for WOOD — it is
@@ -1640,6 +1649,11 @@ function Offers:acceptForestryOffer(offer)
 		years = offer.years,
 		suggestedStation = offer.suggestedStation,
 		contractType = offer.contractType,
+
+		-- ONE QUOTA FOR THE TERM. Not a balance choice — an annual quota makes tiers 2 and 3
+		-- impossible to complete, because the trees they require have not grown yet in years 1
+		-- and 2 and the contract terminates on the second miss. See ContractStore:signContract.
+		isTermQuota = offer.isTermQuota,
 	})
 
 	self:removeOffer(offer.id)
