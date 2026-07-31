@@ -10,6 +10,7 @@ ForwardContracts.VERSION = "0.1.0.0"
 -- Order matters: Offers reads constants off ContractStore at source time.
 source(ForwardContracts.MOD_DIR .. "scripts/DeliveryWatch.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/WoodWatch.lua")
+source(ForwardContracts.MOD_DIR .. "scripts/PlantingWatch.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/Animals.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/Settlement.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/ContractStore.lua")
@@ -60,6 +61,12 @@ function ForwardContracts:loadMap(name)
 		self.contractStore = ContractStore.new()
 		self.deliveryWatch = DeliveryWatch.new()
 		self.woodWatch = WoodWatch.new()
+
+		-- The planting ledger. Its provider is the store itself — `creditPlanting` lives there
+		-- because completing a contract is the store's business, and a tree can be the LAST
+		-- thing a forestry contract was waiting for.
+		self.plantingWatch = PlantingWatch.new(self.contractStore)
+
 		self.animals = Animals.new()
 		self.feedLedger = FeedLedger.new()
 		self.settlement = Settlement.new(self.contractStore)
@@ -94,6 +101,13 @@ function ForwardContracts:loadMap(name)
 		-- later — selling stations are not all registered yet at this point.
 		self.deliveryWatch:install()
 		self.woodWatch:install()
+
+		-- ⚠ INSTALLED HERE, WHICH IS BEFORE `contractStore:load()` IN `onFinishedLoading`.
+		-- That ordering is deliberate and harmless: loading a savegame replays `plantTree` for
+		-- every stored tree (`misc/TreePlantManager.lua:652`), and those replays are rejected
+		-- by `PlantingWatch:onPlanted`'s own discriminators. There are also no contracts to
+		-- credit yet at that point. Two independent reasons, and only one of them is ordering.
+		self.plantingWatch:install()
 		self.animals:install()
 		self.feedLedger:install()
 		self.contractStore:subscribe()
@@ -194,6 +208,7 @@ function ForwardContracts:deleteMap()
 	self.contractStore = nil
 	self.deliveryWatch = nil
 	self.woodWatch = nil
+	self.plantingWatch = nil
 	self.animals = nil
 	self.settlement = nil
 	self.offers = nil

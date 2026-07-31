@@ -225,6 +225,19 @@ function ContractStore:signContract(spec)
 		speciesName = spec.speciesName,
 		plantingFloor = spec.plantingFloor,
 
+		-- TREES OF THAT SPECIES PLANTED SINCE SIGNING. Counted by `PlantingWatch`.
+		--
+		-- **CUMULATIVE, AND NEVER DECREMENTED WHEN A TREE IS FELLED.** User ruling 2026-08-02.
+		-- Felling is the entire point of the contract, so counting SURVIVING trees would be
+		-- self-defeating: delivering the quota destroys the evidence that you grew it. This
+		-- counts the ACT of planting, which happened and cannot un-happen.
+		--
+		-- **SINCE SIGNING, so it starts at zero.** Trees already in the ground earn nothing.
+		-- That is what makes the derived term honest — the term IS `growth * 1.1`, priced on
+		-- the assumption that you plant, wait and fell. Crediting a mature stand planted years
+		-- ago would satisfy an eleven-year pine contract on the day it was signed.
+		planted = 0,
+
 		-- LIVESTOCK ONLY, AND IT NO LONGER SETTLES ANYTHING. `Offers:createAnimalOffer` rolls it
 		-- within the tier's band and `rate` is already `anchor x rateMultiplier`, so this is
 		-- kept as the RECORD of how the rate was reached — `ContractBoardFrame.describeMultiplier`
@@ -457,9 +470,78 @@ function ContractStore:recordDelivery(contract, litres, money)
 
 	if contract.kind == ContractStore.KIND_SPOT and contract.remainingLitres <= 0 then
 		self:completeSpotOrder(contract)
-	elseif contract.isTermQuota and not contract.isComplete and contract.remainingLitres <= 0 then
-		self:completeTermContract(contract)
+	elseif contract.isTermQuota then
+		self:tryCompleteTermContract(contract)
 	end
+end
+
+--- A forestry contract needs BOTH its litres and its trees. Complete it only when it has both.
+---
+--- **THE PLANTING FLOOR IS A HARD GATE ON COMPLETION.** User ruling 2026-08-02, and it is what
+--- makes the species mean anything: chips are species-blind at the till, so without this gate
+--- "an oak contract" is a word on a board and all four tiers are the same contract.
+---
+--- Called from BOTH sides, because either can be the last one to land:
+---
+---   * `recordDelivery` — the chips arrive and the trees were already in the ground.
+---   * `creditPlanting` — the chips arrived long ago and the player is still planting.
+---
+--- Checking only on delivery would strand a contract whose quota was met first: nothing else
+--- would ever look at it again and it would sit holding a slot until its deadline, for a reason
+--- the player had already fixed.
+function ContractStore:tryCompleteTermContract(contract)
+	if contract.isComplete or (contract.remainingLitres or 0) > 0 then
+		return false
+	end
+
+	if not self:hasMetPlantingFloor(contract) then
+		return false
+	end
+
+	self:completeTermContract(contract)
+
+	return true
+end
+
+--- Whether the contract's planting floor is satisfied. True when it has no floor at all, so
+--- every non-forestry contract passes and this can be asked unconditionally.
+function ContractStore:hasMetPlantingFloor(contract)
+	local floor = contract.plantingFloor or 0
+
+	return floor <= 0 or (contract.planted or 0) >= floor
+end
+
+--- A tree of some species was planted. Credit every live contract that named it.
+---
+--- **EVERY MATCHING CONTRACT, not the first.** One tree serves whichever agreements wanted that
+--- species — the same reasoning that lets one animal sale settle against two livestock
+--- contracts. In practice they cannot collide: tiers 1-3 hold one contract, and tier 4's two
+--- are one 4a and one 4b, which draw from disjoint species bands by construction (§4.4).
+---
+--- Species is matched BY NAME. See `signContract`.
+function ContractStore:creditPlanting(farmId, speciesName)
+	if farmId == nil or speciesName == nil then
+		return 0
+	end
+
+	local credited = 0
+
+	for _, contract in ipairs(self.contracts) do
+		if contract.farmId == farmId
+			and not contract.isComplete
+			and contract.speciesName == speciesName then
+
+			contract.planted = (contract.planted or 0) + 1
+			credited = credited + 1
+
+			-- The trees may be the LAST thing outstanding — see `tryCompleteTermContract`.
+			if contract.isTermQuota then
+				self:tryCompleteTermContract(contract)
+			end
+		end
+	end
+
+	return credited
 end
 
 --- A TERM CONTRACT IS A DEADLINE, NOT A DURATION. Meeting the quota finishes it there and then.
@@ -557,8 +639,43 @@ function ContractStore:settleTermContract(contract)
 	local quota = contract.quotaThisYear or 0
 	local delivered = contract.deliveredThisYear or 0
 
-	if quota <= 0 or delivered >= quota then
+	-- ⚠ **THE PLANTING FLOOR IS PART OF THE DEADLINE TEST, NOT ONLY OF EARLY COMPLETION.**
+	--
+	-- Without this clause a contract that delivered every litre but planted nothing would fall
+	-- into the success branch here, and the gate in `tryCompleteTermContract` would have bought
+	-- exactly nothing: it would delay completion to the deadline and then grant it anyway. The
+	-- species would still mean nothing — it would just mean nothing later.
+	local metFloor = self:hasMetPlantingFloor(contract)
+
+	if metFloor and (quota <= 0 or delivered >= quota) then
 		self:completeTermContract(contract)
+		return
+	end
+
+	-- ⚠ **THE PENALTY IS CHARGED ON THE LITRE SHORTFALL, AND A TREE SHORTFALL IS NOT ONE.**
+	--
+	-- A player who delivered everything and planted too few has `delivered >= quota`, so
+	-- `onYearMissed` would compute a shortfall fraction of zero or less, charge nothing, and
+	-- call `onQuotaMissed` with a meaningless number. The contract still FAILS — they did not
+	-- honour its terms — but it fails without a fine, because the quota they agreed to in
+	-- litres was met. Reputation still takes the hit through `onContractUnfulfilled` below.
+	--
+	-- Ruled this way rather than inventing a tree-denominated penalty: the mod observes and
+	-- pays, and there is no honest price for a tree that was never planted.
+	if delivered >= quota then
+		Logging.info("[ForwardContracts] Contract %d delivered %d of %d l but planted %d of %d "
+			.. "%s. Unfulfilled, no penalty.", contract.id, delivered, quota,
+			contract.planted or 0, contract.plantingFloor or 0,
+			tostring(contract.speciesName))
+
+		contract.isComplete = true
+		contract.didFulfilTerm = false
+		contract.consecutiveMisses = (contract.consecutiveMisses or 0) + 1
+
+		if self.reputation ~= nil then
+			self.reputation:onContractUnfulfilled(contract)
+		end
+
 		return
 	end
 
@@ -847,6 +964,15 @@ function ContractStore:save()
 			setXMLInt(xmlFile, key .. "#plantingFloor", contract.plantingFloor)
 		end
 
+		-- **LOSING THIS RESETS THE LEDGER TO ZERO AND MAKES THE CONTRACT UNFULFILLABLE.** The
+		-- trees are already in the ground and cannot be planted again, so a player who did
+		-- everything right would fail at the deadline with no way to recover and no error
+		-- anywhere. Written unconditionally, including the zero, so a missing attribute on load
+		-- is a genuine signal rather than "it happened to be nothing".
+		if contract.speciesName ~= nil then
+			setXMLInt(xmlFile, key .. "#planted", contract.planted or 0)
+		end
+
 		if contract.subTypeName ~= nil then
 			setXMLString(xmlFile, key .. "#subTypeName", contract.subTypeName)
 		end
@@ -975,6 +1101,7 @@ function ContractStore:load()
 				quotaTotal = getXMLFloat(xmlFile, key .. "#quotaTotal"),
 				speciesName = getXMLString(xmlFile, key .. "#speciesName"),
 				plantingFloor = getXMLInt(xmlFile, key .. "#plantingFloor"),
+				planted = getXMLInt(xmlFile, key .. "#planted") or 0,
 				suggestedStation = getXMLString(xmlFile, key .. "#suggestedStation"),
 				subTypeName = getXMLString(xmlFile, key .. "#subTypeName"),
 				ageMin = getXMLInt(xmlFile, key .. "#ageMin"),
