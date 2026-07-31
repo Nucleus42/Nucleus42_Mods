@@ -2087,8 +2087,28 @@ function Offers:refreshSpotOffers(farmId, spotCount, candidates, tier, processed
 	local resumeDay = self.spotResumeDay[farmId]
 
 	if resumeDay == nil then
-		self.spotResumeDay[farmId] = today + Offers.SPOT_COOLDOWN_DAYS
-		return
+		-- FIRST REFRESH AFTER A LOAD POSTS IMMEDIATELY, and this branch exists entirely for
+		-- that. Offers are not persisted — `main.lua` regenerates the board on load — so every
+		-- restart hands us an empty spot board that is indistinguishable from one that just
+		-- emptied in play. Charging the cooldown for it meant NO SPOT ORDERS FOR THREE DAYS
+		-- AFTER EVERY RESTART, and a player who saves and quits each session would barely see
+		-- one. Found by reading the load path, not in play; it would have looked like the
+		-- feature simply not working.
+		--
+		-- `seenFarm` is what separates the two cases: a farm the board has already served this
+		-- session emptied for real and serves the gap.
+		self.seenFarm = self.seenFarm or {}
+
+		if self.seenFarm[farmId] then
+			-- Emptied during play. Serve the gap.
+			self.spotResumeDay[farmId] = today + Offers.SPOT_COOLDOWN_DAYS
+			return
+		end
+
+		-- First sight of this farm since load. Treat the gap as already served, rather than
+		-- leaving resumeDay nil and comparing a number against it below.
+		self.seenFarm[farmId] = true
+		resumeDay = today
 	end
 
 	if today < resumeDay then
