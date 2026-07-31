@@ -82,7 +82,32 @@ function Settlement:onDelivery(delivery)
 
 	local realisedRate = self:getRealisedRate(delivery)
 	local countedMoney = realisedRate * countedLitres
-	local adjustment = (contract.rate - realisedRate) * countedLitres
+
+	-- TWO SETTLEMENT MODES, AND THE CONTRACT ITSELF SAYS WHICH. Branching on the presence of
+	-- `rateMultiplier` rather than on a list of contract types: a property of the contract
+	-- cannot fall out of step with the types, and a type list has to be maintained forever.
+	-- Same reasoning as `offer.isPosted`. Livestock also carries a multiplier but never
+	-- reaches here — head contracts are excluded by `getActiveContract`.
+	local adjustment
+
+	if contract.rateMultiplier ~= nil then
+		-- FORESTRY. Paid as a premium on what the timber ACTUALLY fetched, so quality of
+		-- cutting is rewarded rather than punished. FORESTRY.md, and the reversal note at
+		-- `Offers.getPostedRate`: a flat rate pays MORE for worse wood, because the litres are
+		-- identical and the market price is not. An intact oak realises 0.0069/l against 0.33
+		-- for the same tree cut up — 46x — so under a flat rate tipping whole trees would be a
+		-- 98% subsidy for strictly less work.
+		--
+		-- The quota is still LITRES, so a player who delivers junk still completes the
+		-- contract; they are simply paid a premium on wood worth nearly nothing. **The game's
+		-- own pricing does the policing. The mod observes and pays.**
+		adjustment = (contract.rateMultiplier - 1) * countedMoney
+	else
+		-- CROPS AND ANIMAL PRODUCTS. A true hedge: the agreed rate is honoured whatever the
+		-- market did, up or down. A litre of wheat is a litre of wheat, so there is no quality
+		-- axis for the player to game and nothing to reward.
+		adjustment = (contract.rate - realisedRate) * countedLitres
+	end
 
 	if adjustment ~= 0 then
 		-- addChange = true so it shows in the finance breakdown; force = true so it

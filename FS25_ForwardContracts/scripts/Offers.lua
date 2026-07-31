@@ -1458,21 +1458,45 @@ function Offers.getForestryTiersFor(reputation)
 	return available
 end
 
---- The price per litre a posted forestry contract pays.
+--- The REPRESENTATIVE price per litre of a posted forestry contract.
 ---
---- POSTED, NOT NEGOTIATED. *"Posted. Wood is wood, end of story."* — user, 2026-08-01. So there
---- is no `Negotiation.createProfile` on a forestry offer and no haggling dialog; the buyer
---- states a rate and the player takes it or leaves it, exactly as livestock does.
+--- POSTED, NOT NEGOTIATED. *"Posted. Wood is wood, end of story."* — user, 2026-08-01.
 ---
---- Livestock posts a `rateMultiplier` on the CONTRACT because each animal's own sale value
---- differs and a flat cash rate would pay less the better the animal was (see ANIMAL_TIERS).
---- **Wood has no such problem** — a litre is a litre, and the measurement that settled it is in
---- `WOOD_REALISED_SHARE`: a whole tree and a cut log came within 1.13x of each other in play, so
---- there is no "deliver your worst stock" incentive to design against. The multiplier is
---- therefore applied ONCE, here, and baked into a flat `rate`.
+--- > # ⛔ THIS IS NOT WHAT SETTLES THE CONTRACT. REVERSED 2026-08-01 — DO NOT RESTORE.
+--- >
+--- > This function used to produce a FLAT RATE that `Settlement` paid per litre, on the finding
+--- > that a whole tree and a cut log come within 1.13x of each other. **That finding was wrong,
+--- > and `fcWood` disproved it on its first delivery.**
+--- >
+--- > ```
+--- > wood: OAK, 5230 l at 0.0069 /l, longest side 16.8 m, listed 0.90, K 0.008
+--- > ```
+--- >
+--- > A whole tree tipped intact realises **K = 0.008**, against 0.367 for the same tree cut up —
+--- > a **46x** spread, not 1.13x. Both floors were hit at once: `defoliageScale` bottoms at 0.2
+--- > with 15+ attachments and `qualityScale` at about 0.05, and 0.2 x 0.05 = 0.010 is exactly
+--- > what the line decomposes to.
+--- >
+--- > The 1.13x test compared CUT against CUT-AND-DELIMBED. It never sampled an intact tree,
+--- > which is the case the concern was about. **That was a test design fault, not a measurement
+--- > fault.**
+--- >
+--- > Under a flat rate that is a 98% subsidy for LESS work: the same litres, no delimbing, no
+--- > cutting, and fewer trees felled because branches carry volume. Strictly dominant.
 ---
---- That is why forestry adds no new persisted field. `contractType` already reaches all five
---- hand-written lists; `rate` is an ordinary crop-contract field.
+--- So forestry settles on a MULTIPLIER, exactly as livestock does and for the identical reason
+--- already recorded at `ANIMAL_TIERS`: *"a fixed cash rate per head would top up LESS the better
+--- the animal was, and the player would earn most by delivering their worst stock. That is
+--- precisely backwards."* Wood has the same shape — cut badly, and a flat rate pays you MORE.
+---
+--- `Settlement:onDelivery` pays `(rateMultiplier - 1) x realisedValue`, so cutting properly
+--- earns twice over: a better market price AND a bigger top-up. **The game's own pricing does
+--- the policing and the mod still only observes and pays** (FORESTRY.md §2).
+---
+--- What this function still produces is the rate the QUOTA is derived at and the SHORTFALL
+--- PENALTY is charged at — the value of a year of the contract when the wood is cut the way K
+--- was measured. Same role `contract.rate` plays for livestock, and the same caveat: it is a
+--- representative figure, not the settlement mechanism.
 function Offers.getPostedRate(marketRate, rateMultiplier)
 	if type(marketRate) ~= "number" or marketRate <= 0 then
 		return nil
@@ -1588,7 +1612,16 @@ function Offers:acceptForestryOffer(offer)
 		kind = ContractStore.KIND_SUPPLY,
 		unit = ContractStore.UNIT_LITRES,
 		fillTypeIndex = offer.fillTypeIndex,
+
+		-- REPRESENTATIVE, not what settles. It is what the quota was derived at and what the
+		-- shortfall penalty is charged at. See Offers.getPostedRate.
 		rate = offer.rate,
+
+		-- **WHAT ACTUALLY SETTLES.** Settlement:onDelivery pays `(rateMultiplier - 1) x the
+		-- money the market really paid`, so wood cut badly earns proportionally less. Dropping
+		-- this field silently reverts forestry to flat-rate settlement and restores a 98%
+		-- subsidy for tipping whole trees — see the reversal note at Offers.getPostedRate.
+		rateMultiplier = offer.rateMultiplier,
 
 		-- Posted terms carry no completion bonus. Livestock's exists because its bottom rung
 		-- sits BELOW market at 0.90 and would otherwise be strictly bad to sign (see
