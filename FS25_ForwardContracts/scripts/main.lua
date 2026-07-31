@@ -9,6 +9,7 @@ ForwardContracts.VERSION = "0.1.0.0"
 
 -- Order matters: Offers reads constants off ContractStore at source time.
 source(ForwardContracts.MOD_DIR .. "scripts/DeliveryWatch.lua")
+source(ForwardContracts.MOD_DIR .. "scripts/WoodWatch.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/Animals.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/Settlement.lua")
 source(ForwardContracts.MOD_DIR .. "scripts/ContractStore.lua")
@@ -58,6 +59,7 @@ function ForwardContracts:loadMap(name)
 
 		self.contractStore = ContractStore.new()
 		self.deliveryWatch = DeliveryWatch.new()
+		self.woodWatch = WoodWatch.new()
 		self.animals = Animals.new()
 		self.feedLedger = FeedLedger.new()
 		self.settlement = Settlement.new(self.contractStore)
@@ -70,6 +72,11 @@ function ForwardContracts:loadMap(name)
 		self.offers:setClientProvider(self.clientRegistry)
 
 		self.deliveryWatch:addListener(self.settlement, Settlement.onDelivery)
+
+		-- Species reaches settlement as an ANNOTATION on the ordinary delivery event, not as a
+		-- parallel count. WoodWatch parks the tree in flight; DeliveryWatch consumes it when the
+		-- sale actually books, so the two can never disagree about how much wood was sold.
+		self.deliveryWatch:setWoodWatch(self.woodWatch)
 
 		-- A contract completing in good standing brings its buyer straight back. Wired as a
 		-- handler because ContractStore must not learn how the board works — and it has to
@@ -86,6 +93,7 @@ function ForwardContracts:loadMap(name)
 		-- Install the hook now so no sale can slip past, but seed the station snapshots
 		-- later — selling stations are not all registered yet at this point.
 		self.deliveryWatch:install()
+		self.woodWatch:install()
 		self.animals:install()
 		self.feedLedger:install()
 		self.contractStore:subscribe()
@@ -185,6 +193,7 @@ function ForwardContracts:deleteMap()
 
 	self.contractStore = nil
 	self.deliveryWatch = nil
+	self.woodWatch = nil
 	self.animals = nil
 	self.settlement = nil
 	self.offers = nil

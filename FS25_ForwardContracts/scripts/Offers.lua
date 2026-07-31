@@ -532,11 +532,23 @@ end
 --- mature-volume table, and for the same reason: it cannot be read at runtime without felling
 --- a tree. Unlike that table it is a single scalar and needs no per-species data.
 ---
---- CAVEAT, RECORDED SO IT IS A CHOICE AND NOT AN OVERSIGHT: taken on HARD, where
---- `economicDifficulty / numDifficulties` is 1 and the `MathUtil.lerp` at
---- `WoodUnloadTrigger.lua:155-156` is inert. On easier settings the quality and defoliage
---- penalties soften toward 1, so K rises and the derived quota runs slightly high. Consistent
---- with the 2026-07-31 ruling to honour the player's difficulty rather than compensate for it.
+--- ⚠ **CORRECTED 2026-08-01: THE MEASUREMENTS WERE TAKEN ON EASY, NOT HARD.** This comment
+--- originally claimed hard, on the strength of a note about a different save. `fcSellable`
+--- reported wood at 1.101 /l, which is `1.0 x 3 x 0.367`, and 3 is `PRICE_MULTIPLIER[1]` —
+--- easy (`EconomyManager.lua:13`). Paper Factory declares no `priceScale` for WOOD, so the
+--- 3x has no other source.
+---
+--- The direction of the caveat therefore INVERTS. On easy the `MathUtil.lerp` at
+--- `WoodUnloadTrigger.lua:155-156` pulls `qualityScale` and `defoliageScale` toward 1, so the
+--- penalties are SOFTENED and K is measured HIGH. **On hard the true K is lower than 0.367**,
+--- and the derived quota there runs slightly small — the opposite of what was recorded.
+---
+--- Not corrected by arithmetic, because the lerp acts on two of the three factors and not on
+--- `lengthScale`, so K does not simply scale. `fcWood` logs the ratio for every delivery the
+--- player makes, which is the cheap way to re-measure it on whatever difficulty they play.
+---
+--- Consistent either way with the 2026-07-31 ruling to honour the player's difficulty setting
+--- rather than compensate for it.
 ---
 --- WOODCHIPS IS NOT AFFECTED and must not be adjusted — chips arrive through an ordinary
 --- unload trigger with no `extraAttributes`, so their listed price is the real one.
@@ -552,12 +564,40 @@ Offers.WOOD_REALISED_SHARE = 0.367
 --- carried as an untuned constant since 2026-07-28. **It is derived, not tuned.** User ruling
 --- 2026-08-01, offered the neutral alternative of averaging every split type at runtime:
 --- *"Keep the anchor as is."*
-function Offers.getRealisedRate(fillTypeIndex, listedPrice)
-	if FillType ~= nil and fillTypeIndex == FillType.WOOD then
-		return listedPrice * Offers.WOOD_REALISED_SHARE
+--- ⚠ **IT TAKES THE RAW DECLARED PRICE, NOT THE EFFECTIVE ONE, AND THAT DISTINCTION IS THE
+--- WHOLE FUNCTION.** The first version of this multiplied `getEffectiveFillTypePrice` by K and
+--- shipped. It was wrong within the hour: `fcSellable` on the user's save reported
+--- **1.101 /l** for wood, which is `1.0 x 3 x 0.367` — the difficulty multiplier, applied to a
+--- price that never sees it.
+---
+--- `getEffectiveFillTypePrice` (`SellingStation.lua:388-401`) layers on the seasonal factor,
+--- the random delta, the station's great-demand `priceMultipliers` and
+--- `EconomyManager.getPriceMultiplier()`. **A wood sale reaches NONE of them**, because
+--- `extraAttributes.price` replaces the whole expression at `:374-377`. So scaling the effective
+--- price by K carries every one of those multipliers into a number that must not have any.
+---
+--- On EASY that is a 3x error — worse than the bug phase 0 was written to fix.
+---
+--- The base price is what `addAcceptedFillType` is seeded from in the first place
+--- (`SellingStation.lua:82`: `fillType.pricePerLiter * priceScale`), so this is the same
+--- quantity the station starts from, taken before the economy touches it.
+---
+--- Returns nil when the base price cannot be read, and the caller drops the fill type. Silence
+--- beats a wood contract priced off a number we could not verify.
+function Offers.getRealisedRate(fillTypeIndex, effectivePrice)
+	if FillType == nil or fillTypeIndex ~= FillType.WOOD then
+		return effectivePrice
 	end
 
-	return listedPrice
+	local fillType = g_fillTypeManager ~= nil
+		and g_fillTypeManager:getFillTypeByIndex(fillTypeIndex) or nil
+	local base = type(fillType) == "table" and fillType.pricePerLiter or nil
+
+	if type(base) ~= "number" or base <= 0 then
+		return nil
+	end
+
+	return base * Offers.WOOD_REALISED_SHARE
 end
 
 --- Selling stations that belong to a PRODUCTION POINT somebody owns, keyed by station object.
@@ -641,10 +681,13 @@ function Offers:getSellableFillTypes()
 				local original = station.originalFillTypePrices ~= nil
 					and station.originalFillTypePrices[fillTypeIndex] or 0
 
-				if original > 0 then
-					local price = Offers.getRealisedRate(fillTypeIndex,
-						station:getEffectiveFillTypePrice(fillTypeIndex, ToolType.UNDEFINED) or 0)
+				local price = original > 0 and Offers.getRealisedRate(fillTypeIndex,
+					station:getEffectiveFillTypePrice(fillTypeIndex, ToolType.UNDEFINED) or 0) or nil
 
+				-- A nil rate means we could not establish an honest price — currently only wood
+				-- with an unreadable base price. Dropping the fill type is the right
+				-- degradation: money-first DIVIDES by this, so a wrong rate is a wrong contract.
+				if price ~= nil and price > 0 then
 					local existing = sellable[fillTypeIndex]
 					if existing == nil then
 						sellable[fillTypeIndex] = {

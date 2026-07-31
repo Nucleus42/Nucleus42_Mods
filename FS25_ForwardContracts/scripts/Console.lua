@@ -25,6 +25,7 @@ Console.COMMANDS = {
 	{ name = "fcOffer", desc = "Force an offer: [supply|breeding|product] [species or fillType] [client] [tier]", fn = "consoleOffer" },
 	{ name = "fcFeed", desc = "Show what this farm has fed and the equipment it proves. 'clear' wipes it", fn = "consoleFeed" },
 	{ name = "fcSellable", desc = "List every fill type the board may contract, with its rate and best buyer [filter]", fn = "consoleSellable" },
+	{ name = "fcWood", desc = "Log every wood delivery's species, litres and realised rate. 'off' stops it", fn = "consoleWood" },
 }
 
 function Console.new(mod)
@@ -853,4 +854,39 @@ function Console:consoleSellable(filterArg)
 	end
 
 	return table.concat(lines, "\n")
+end
+
+--- `fcWood [off]` — print every wood delivery's species, litres, realised rate and implied K.
+---
+--- Phase 2 of forestry is deliberately invisible: it recovers the species a wood sale loses on
+--- its way to the till and hands it to DeliveryWatch, and nothing yet acts on it. This is how
+--- the seam gets proven before a contract depends on it.
+---
+--- It also turns every delivery the player makes into a free K measurement.
+--- `Offers.WOOD_REALISED_SHARE` is 0.367, taken from three whole trees; the `K` column here is
+--- the same ratio computed on whatever was actually cut, so the constant can be checked against
+--- ordinary play rather than a measurement run.
+---
+--- OFF by default. It writes a line per TREE, and a trailer of logs would flood log.txt.
+function Console:consoleWood(arg)
+	local watch = self.mod.woodWatch
+
+	if watch == nil then
+		return "WoodWatch is not active — server only."
+	end
+
+	if not watch.isInstalled then
+		return "WoodWatch did not install. WoodUnloadTrigger hooks were not found, so species "
+			.. "tracking is off; see log.txt. Tier 1 wood contracts are unaffected."
+	end
+
+	if tostring(arg or ""):lower() == "off" then
+		watch.logDeliveries = false
+		return "Wood delivery logging off."
+	end
+
+	watch.logDeliveries = true
+
+	return "Wood delivery logging ON. Tip a tree at a sawmill you do NOT own and read log.txt: "
+		.. "one line per tree with species, litres, realised rate and implied K."
 end

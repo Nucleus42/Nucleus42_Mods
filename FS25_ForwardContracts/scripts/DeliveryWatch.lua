@@ -166,13 +166,28 @@ function DeliveryWatch:onSale(station, farmId, fillDelta, fillTypeIndex, toolTyp
 		return
 	end
 
+	-- SPECIES, if this was wood and WoodWatch saw the tree. Attached to the SAME event rather
+	-- than counted separately, so the species tiers can never disagree with the litres the
+	-- player was actually paid for — see WoodWatch's header for why that matters.
+	--
+	-- nil for everything else, and nil for wood that reached the till by a route we did not
+	-- wrap. Consumers must treat nil as "unknown species", never as a default one.
+	local wood = self.woodWatch ~= nil and self.woodWatch:consumePending() or nil
+
 	self:notify({
 		farmId = farmId,
 		fillTypeIndex = fillTypeIndex,
 		litres = fillDelta,
 		money = paid,
 		station = station,
+		speciesName = wood ~= nil and wood.speciesName or nil,
 	})
+end
+
+--- Seam to WoodWatch. Optional: without it every delivery simply carries no species, which is
+--- exactly the state the mod was in before forestry and is correct for every other fill type.
+function DeliveryWatch:setWoodWatch(woodWatch)
+	self.woodWatch = woodWatch
 end
 
 --- Money paid for this sale = the change in the station's running total since the last
