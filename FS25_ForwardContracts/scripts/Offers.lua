@@ -1341,6 +1341,229 @@ function Offers:createSupplyOffer(farmId, candidates, tier, reputation, processe
 end
 
 -- ---------------------------------------------------------------------------
+-- Forestry offers — POSTED, not negotiated. FORESTRY.md §1.5 rulings 1 and 2.
+-- ---------------------------------------------------------------------------
+
+--- The three forestry tiers, which are a `contractType` AXIS and **NOT a fourth money ladder**.
+---
+--- FORESTRY.md §1.5 ruling 3 and the amendments block: the mod has FOUR reputation rungs
+--- (`Offers.TIERS`, £30/42/60/85k, shared with `ANIMAL_TIERS`) and ONE contract budget. Simple /
+--- eco / specialist sit alongside SUPPLY / BREEDING / PRODUCT as a kind of contract, gated by
+--- reputation rather than being their own ladder. **Do not give these their own annualValue.**
+Offers.FORESTRY_SIMPLE = "FORESTRY_SIMPLE"
+Offers.FORESTRY_ECO = "FORESTRY_ECO"
+Offers.FORESTRY_SPECIALIST = "FORESTRY_SPECIALIST"
+
+--- ⚠ `rateMultiplier` AND `minReputation` HERE ARE UNTUNED FEEL NUMBERS. They are the only
+--- invented constants in the forestry line and FORESTRY.md has always said so: *"They are
+--- balance constants... set them once the loop has been played, not before."* Everything else
+--- in this file's forestry code is derived or measured. Raise them with the user; do not
+--- quietly re-tune them here.
+---
+--- **WHAT THE MULTIPLIER ACTUALLY DOES, AND IT IS EASY TO GET BACKWARDS.** Under money-first
+--- the rung fixes the MONEY, so a premium cannot pay more — it can only ask for less. See
+--- `Offers.getPostedRate` and the ordering warning in `createForestryOffer`.
+---
+--- **TIER 1 IS 1.00 ON PURPOSE, AND IT IS STILL NOT NEUTRAL.** Its premium is DERIVED rather
+--- than posted: a tier-1 contract cannot know what species will arrive, so it anchors on WOOD's
+--- own declared price, which sits above most real timber. That is worth about 10% and it is
+--- FORESTRY.md's original "wood price + a modest %". Adding a multiplier on top would be
+--- charging that premium twice. See `Offers.getRealisedRate`.
+---
+--- `minReputation` is a TRUST gate, not a capability one — a buyer wanting provenance-verified
+--- timber asks an established supplier, not a stranger. It deliberately does NOT assess whether
+--- the player could grow the trees; that is the "never baby the player" rule, and the honest
+--- constraint on eco contracts is the TERM, which is derived. See `getForestryTiersFor`.
+Offers.FORESTRY_TIERS = {
+	{ contractType = Offers.FORESTRY_SIMPLE, minReputation = 0.00, rateMultiplier = 1.00 },
+	{ contractType = Offers.FORESTRY_ECO, minReputation = 0.25, rateMultiplier = 1.15 },
+	{ contractType = Offers.FORESTRY_SPECIALIST, minReputation = 0.50, rateMultiplier = 1.30 },
+}
+
+--- Whether a forestry tier requires the wood to have been planted and grown by the player.
+--- Tier 1 takes any wood from any source, including bought logs — FORESTRY.md, DECIDED
+--- 2026-07-28: purchased logs cost more than the contract pays, so the economics police it and
+--- the mod does not have to.
+function Offers.forestryNeedsProvenance(contractType)
+	return contractType == Offers.FORESTRY_ECO
+		or contractType == Offers.FORESTRY_SPECIALIST
+end
+
+--- Whether a forestry tier names specific species. Only the top one does.
+function Offers.forestryNeedsSpecies(contractType)
+	return contractType == Offers.FORESTRY_SPECIALIST
+end
+
+function Offers.isForestryType(contractType)
+	return contractType == Offers.FORESTRY_SIMPLE
+		or contractType == Offers.FORESTRY_ECO
+		or contractType == Offers.FORESTRY_SPECIALIST
+end
+
+--- Forestry tiers this reputation may be offered, worst first. Empty is impossible — tier 1
+--- gates at zero — so callers may pick from it without a nil check.
+function Offers.getForestryTiersFor(reputation)
+	local available = {}
+
+	for _, tier in ipairs(Offers.FORESTRY_TIERS) do
+		if (reputation or 0) >= tier.minReputation then
+			table.insert(available, tier)
+		end
+	end
+
+	return available
+end
+
+--- The price per litre a posted forestry contract pays.
+---
+--- POSTED, NOT NEGOTIATED. *"Posted. Wood is wood, end of story."* — user, 2026-08-01. So there
+--- is no `Negotiation.createProfile` on a forestry offer and no haggling dialog; the buyer
+--- states a rate and the player takes it or leaves it, exactly as livestock does.
+---
+--- Livestock posts a `rateMultiplier` on the CONTRACT because each animal's own sale value
+--- differs and a flat cash rate would pay less the better the animal was (see ANIMAL_TIERS).
+--- **Wood has no such problem** — a litre is a litre, and the measurement that settled it is in
+--- `WOOD_REALISED_SHARE`: a whole tree and a cut log came within 1.13x of each other in play, so
+--- there is no "deliver your worst stock" incentive to design against. The multiplier is
+--- therefore applied ONCE, here, and baked into a flat `rate`.
+---
+--- That is why forestry adds no new persisted field. `contractType` already reaches all five
+--- hand-written lists; `rate` is an ordinary crop-contract field.
+function Offers.getPostedRate(marketRate, rateMultiplier)
+	if type(marketRate) ~= "number" or marketRate <= 0 then
+		return nil
+	end
+
+	return marketRate * (rateMultiplier or 1)
+end
+
+--- A forestry offer. Money first, litres derived, terms posted.
+---
+--- ⚠ **THE QUOTA IS DERIVED AT THE POSTED RATE, NOT THE MARKET RATE, AND THE OTHER WAY ROUND IS
+--- A REAL BUG WAITING TO HAPPEN.** Money-first means revenue must come out at `annualValue`:
+---
+---     quota = annualValue / postedRate   ->  quota * postedRate = annualValue          ✅
+---     quota = annualValue / marketRate   ->  quota * postedRate = annualValue * mult   ❌
+---
+--- The second silently pays a tier-3 contract 30% more than its rung, which is precisely the
+--- fault the shared ladder exists to prevent, and it would not show up anywhere except by adding
+--- the year's income up. **So the premium buys LESS WORK for the same money, never more money.**
+--- A tier-3 contract at 1.30 asks for 23% fewer litres than a tier-1 contract of the same rung.
+---
+--- Nothing calls this yet — the board is wired up in phase 3. See FORESTRY.md §1.6.
+function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reputation, forcedClient)
+	if candidate == nil or tier == nil or forestryTier == nil then
+		return nil
+	end
+
+	local years = math.random(tier.years[1], tier.years[2])
+
+	-- Wood is not a production output, so it is never "processed" and the client pool is the
+	-- ordinary one. Resolved BEFORE the money, because `rollAnnualValue` reads `client.size` and
+	-- resolving it afterwards is exactly how livestock lost its loyalty growth (IMPLEMENTATION.md,
+	-- 2026-08-01).
+	local client = forcedClient or self:getClient(farmId, false)
+
+	local rate = Offers.getPostedRate(candidate.marketRate, forestryTier.rateMultiplier)
+	if rate == nil then
+		return nil
+	end
+
+	local annualValue = Offers.rollAnnualValue(tier, client)
+	local quotaPerYear = Offers.deriveQuota(annualValue, rate)
+
+	if quotaPerYear == nil then
+		return nil
+	end
+
+	local offer = {
+		id = self.nextOfferId,
+		farmId = farmId,
+		kind = Offers.KIND_SUPPLY,
+		unit = ContractStore.UNIT_LITRES,
+		fillTypeIndex = candidate.fillTypeIndex,
+		marketRate = candidate.marketRate,
+		suggestedStation = candidate.stationName,
+		quotaPerYear = quotaPerYear,
+		years = years,
+		client = client,
+
+		-- POSTED. The rate is settled here and there is no negotiation profile, which is the
+		-- seam the board reads — see `isPosted`.
+		rate = rate,
+		rateMultiplier = forestryTier.rateMultiplier,
+		contractType = forestryTier.contractType,
+
+		-- WHAT THIS CONTRACT IS MEANT TO BE WORTH IN A YEAR, kept so the invariant
+		-- `quotaPerYear * rate == annualValue` is CHECKABLE rather than merely true.
+		--
+		-- Added because the guard written for that invariant was worthless without it: it
+		-- compared revenue against the rung's full 0.75-1.25 variance band, and a 30% pricing
+		-- error fits comfortably inside a 50% band. Deriving the quota at the market rate
+		-- instead of the posted rate passed every check. Found by breaking it on purpose,
+		-- 2026-08-01 — the second worthless guard caught that day.
+		annualValue = annualValue,
+
+		-- **THE BOARD MUST BRANCH ON THIS, NOT ON A LIST OF TYPES.** ContractBoardFrame currently
+		-- decides how to sign by testing entry kinds and falling through to NegotiationDialog,
+		-- so a posted offer carrying KIND_SUPPLY would open a haggle for a price that was never
+		-- negotiable. A flag says what the offer IS; a type list has to be kept in step with
+		-- every type ever added, which is the shape of the five-list bug.
+		isPosted = true,
+
+		-- No coverage hint on any forestry tier. FORESTRY.md §1.5 ruling 5: there is no honest
+		-- denominator, because any land grows trees. Tier 3's plant-by-date line is the nudge,
+		-- and it is a better one. `getImpliedWorkload` already returns nil for WOOD — it is
+		-- neither a fruit type nor an animal output — so this is belt and braces.
+		coverageHint = nil,
+
+		expiryDay = g_currentMission.environment.currentMonotonicDay + Offers.OFFER_LIFETIME_DAYS,
+	}
+
+	self.nextOfferId = self.nextOfferId + 1
+	table.insert(self.offers, offer)
+
+	return offer
+end
+
+--- Sign a posted forestry offer. No negotiation, so no agreed value and no mix.
+---
+--- Mechanically a crop contract — KIND_SUPPLY, UNIT_LITRES, settled by `Settlement:onDelivery`
+--- against the till like any other litre delivery. Only `contractType` and the posted rate make
+--- it forestry, and both already persist.
+function Offers:acceptForestryOffer(offer)
+	-- Same guard as every other accept path, and for the same reason: an offer outlives the
+	-- moment it was generated in. See acceptSupplyOffer.
+	if self:getRemainingBudget(offer.farmId, self:getReputation(offer.farmId)) <= 0 then
+		return nil, Offers.REFUSED_BUDGET
+	end
+
+	local contract = self.contractStore:signContract({
+		farmId = offer.farmId,
+		clientId = offer.client.id,
+		kind = ContractStore.KIND_SUPPLY,
+		unit = ContractStore.UNIT_LITRES,
+		fillTypeIndex = offer.fillTypeIndex,
+		rate = offer.rate,
+
+		-- Posted terms carry no completion bonus. Livestock's exists because its bottom rung
+		-- sits BELOW market at 0.90 and would otherwise be strictly bad to sign (see
+		-- ANIMAL_TIERS.bonusShare). No forestry rung is below market — the lowest is 1.00
+		-- against an anchor already above most timber — so there is nothing to compensate for.
+		completionBonus = 0,
+
+		quotaPerYear = offer.quotaPerYear,
+		years = offer.years,
+		suggestedStation = offer.suggestedStation,
+		contractType = offer.contractType,
+	})
+
+	self:removeOffer(offer.id)
+
+	return contract
+end
+
+-- ---------------------------------------------------------------------------
 -- Livestock offers
 -- ---------------------------------------------------------------------------
 
