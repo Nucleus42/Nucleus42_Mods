@@ -430,6 +430,29 @@ end
 
 --- How you stand with this client, in words rather than a hidden number.
 ---
+--- Where to take it. A signed contract must answer this — reported from play 2026-08-01:
+--- *"Agreed contract does not say where to deliver the eggs to. I cannot deliver the eggs
+--- until I know where I need to take them."* Four stations on that map buy eggs.
+---
+--- **THIS IS NOT HAND-HOLDING AND THE LIVESTOCK PANEL ALREADY SETS THE PRECEDENT** — it says
+--- "Sell qualifying animals through the dealer as normal". Telling the player the MECHANISM
+--- of delivery is not assessing whether they can meet the terms; a contract you cannot fulfil
+--- because you were never told where to take the goods is a broken contract, not a hard one.
+---
+--- States the rule first and the convenience second. Any buyer settles, because
+--- `Settlement.onDelivery` pays the gap to the agreed rate wherever the sale happened — so
+--- the named station only matters for anything sold OVER quota, which goes at market.
+function ContractBoardFrame.describeDelivery(contract)
+	local anyBuyer = "\nDeliver to any buyer that takes this product — the agreed rate is paid wherever you sell."
+
+	if contract.suggestedStation == nil then
+		return anyBuyer .. "\n"
+	end
+
+	return string.format("%s\nBest price when you signed: %s.\n",
+		anyBuyer, contract.suggestedStation)
+end
+
 --- The coverage nudge, as its own paragraph, or nothing at all.
 ---
 --- Nothing at all is the COMMON case and is deliberate — a contract the farm can comfortably
@@ -700,11 +723,12 @@ function ContractBoardFrame:describeDetail(entry)
 		if contract.kind == ContractStore.KIND_SPOT then
 			return productName(contract.fillTypeIndex),
 				string.format(
-					"Urgent order at %s per litre.\n\nDelivered: %s of %s.\n\nTime remaining: %s.\n\nDeliver the full amount before the deadline or the order lapses and the client remembers it.",
+					"Urgent order at %s per litre.\n\nDelivered: %s of %s.\n\nTime remaining: %s.\n%s\nDeliver the full amount before the deadline or the order lapses and the client remembers it.",
 					g_i18n:formatMoney(contract.rate, 3, true, true),
 					g_i18n:formatVolume(delivered),
 					g_i18n:formatVolume(contract.quotaThisYear),
-					formatDeadline(contract.expiryDay)),
+					formatDeadline(contract.expiryDay),
+					ContractBoardFrame.describeDelivery(contract)),
 				nil
 		end
 
@@ -718,7 +742,7 @@ function ContractBoardFrame:describeDetail(entry)
 
 		return productName(contract.fillTypeIndex),
 			string.format(
-				"Agreed rate: %s per litre.\nCompletion bonus: %s per year.\n\nFull term value if every year is met: %s.\nStill to earn: %s.\n\nThis year: %s delivered of %s.\nTerm: year %d of %d.\nMissed years: %d of %d allowed.\n\nThe rate is fixed. When the market runs above it you are paying for the certainty; when it runs below, the contract is carrying you.",
+				"Agreed rate: %s per litre.\nCompletion bonus: %s per year.\n\nFull term value if every year is met: %s.\nStill to earn: %s.\n\nThis year: %s delivered of %s.\nTerm: year %d of %d.\nMissed years: %d of %d allowed.\n%s\nThe rate is fixed. When the market runs above it you are paying for the certainty; when it runs below, the contract is carrying you.",
 				g_i18n:formatMoney(contract.rate, 3, true, true),
 				g_i18n:formatMoney(contract.completionBonus, 0, true, true),
 				g_i18n:formatMoney(termValue, 0, true, true),
@@ -726,7 +750,8 @@ function ContractBoardFrame:describeDetail(entry)
 				g_i18n:formatVolume(delivered),
 				g_i18n:formatVolume(contract.quotaThisYear),
 				contract.yearIndex, contract.years,
-				contract.consecutiveMisses, ContractStore.MAX_CONSECUTIVE_MISSES),
+				contract.consecutiveMisses, ContractStore.MAX_CONSECUTIVE_MISSES,
+				ContractBoardFrame.describeDelivery(contract)),
 			nil
 	end
 

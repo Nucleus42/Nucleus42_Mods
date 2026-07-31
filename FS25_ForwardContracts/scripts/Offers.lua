@@ -2172,6 +2172,7 @@ function Offers:acceptSpotOffer(offer)
 		unit = offer.unit,
 		fillTypeIndex = offer.fillTypeIndex,
 		rate = offer.rate,
+		suggestedStation = offer.suggestedStation,
 		completionBonus = 0,
 		quotaPerYear = offer.quotaPerYear,
 		years = 1,
@@ -2207,6 +2208,10 @@ function Offers:acceptSupplyOffer(offer, agreedValue, mix)
 		completionBonus = terms.completionBonus,
 		quotaPerYear = offer.quotaPerYear,
 		years = offer.years,
+
+		-- Carried through from the offer. Dropping it is how a signed contract came to say
+		-- nothing about where to deliver — see ContractStore:signContract.
+		suggestedStation = offer.suggestedStation,
 
 		-- nil on everything except livestock, and ContractStore only persists it when
 		-- present — so this carries the genetic specification without the crop path

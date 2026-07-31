@@ -124,6 +124,19 @@ function ContractStore:signContract(spec)
 		fillTypeIndex = spec.fillTypeIndex,
 		rate = spec.rate,
 
+		-- WHERE TO TAKE IT. The offer named a buyer and the signed contract dropped it, so
+		-- the player agreed to deliver 77,038 l of eggs and was then told nothing about where
+		-- (reported from play 2026-08-01). **This is the `feedName` bug for the third time** —
+		-- a field that exists on the offer, displays correctly there, and was never added to
+		-- the hand-written table below.
+		--
+		-- ADVISORY, NOT A DESTINATION LOCK. Any non-train selling station that buys the fill
+		-- type settles the contract, and it makes no financial difference which one you use:
+		-- `Settlement.onDelivery` pays `(contract.rate - realisedRate) x litres`, so contracted
+		-- litres always net the agreed rate wherever they are sold. This names the best-paying
+		-- buyer AT SIGNING, which is the one that matters for anything delivered over quota.
+		suggestedStation = spec.suggestedStation,
+
 		-- Livestock only. The payment tracks each animal's OWN sale value times this,
 		-- rather than a flat cash rate — a fixed rate would top up less the better the
 		-- animal was, which would reward delivering poor stock (§4.6). `rate` above stays
@@ -548,6 +561,12 @@ function ContractStore:save()
 
 		setXMLFloat(xmlFile, key .. "#rate", contract.rate)
 
+		-- Stored as a plain string, not resolved back to a station object. It is a label the
+		-- panel prints; a station that has since been demolished must not break a load.
+		if contract.suggestedStation ~= nil then
+			setXMLString(xmlFile, key .. "#suggestedStation", contract.suggestedStation)
+		end
+
 		if contract.rateMultiplier ~= nil then
 			setXMLFloat(xmlFile, key .. "#rateMultiplier", contract.rateMultiplier)
 		end
@@ -674,6 +693,7 @@ function ContractStore:load()
 				fillTypeIndex = fillTypeIndex,
 				rate = getXMLFloat(xmlFile, key .. "#rate") or 0,
 				rateMultiplier = getXMLFloat(xmlFile, key .. "#rateMultiplier"),
+				suggestedStation = getXMLString(xmlFile, key .. "#suggestedStation"),
 				subTypeName = getXMLString(xmlFile, key .. "#subTypeName"),
 				ageMin = getXMLInt(xmlFile, key .. "#ageMin"),
 				ageMax = getXMLInt(xmlFile, key .. "#ageMax"),
