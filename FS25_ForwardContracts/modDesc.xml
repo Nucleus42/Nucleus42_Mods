@@ -55,6 +55,10 @@ Requires Realistic Livestock (Ritter version).]]></en>
 		<text name="fc_entry_spot">
 			<en>urgent</en>
 		</text>
+		<!-- Appended to whatever the offer already calls itself. See markRenewal. -->
+		<text name="fc_entry_renewal">
+			<en>contract renewal</en>
+		</text>
 		<text name="fc_entry_spotActive">
 			<en>urgent · accepted</en>
 		</text>

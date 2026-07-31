@@ -67,6 +67,12 @@ function ContractStore:setReputationProvider(provider)
 	self.reputation = provider
 end
 
+--- Called as `callback(target, contract)` the moment a contract completes in good standing,
+--- while the contract still exists. See settleContractYear for why the timing is not optional.
+function ContractStore:setRenewalHandler(target, callback)
+	self.renewalHandler = { target = target, callback = callback }
+end
+
 function ContractStore:subscribe()
 	g_messageCenter:subscribe(MessageType.YEAR_CHANGED, self.onYearChanged, self)
 	g_messageCenter:subscribe(MessageType.DAY_CHANGED, self.onDayChanged, self)
@@ -431,6 +437,18 @@ function ContractStore:settleContractYear(contract)
 		-- mid-failure does not.
 		contract.didFulfilTerm = (contract.yearsMet or 0) > 0
 			and contract.consecutiveMisses == 0
+
+		-- RENEWAL FIRES HERE, AND IT HAS TO. `didFulfilTerm` is written on this line and
+		-- `pruneCompleted` deletes the contract eleven lines later in `onYearChanged` — the
+		-- flag is never persisted and cannot be read afterwards by anything. So renewal is not
+		-- "something reads the flag", it is "this moment, before the record is gone".
+		--
+		-- Called through a handler rather than by reaching for Offers directly: ContractStore
+		-- deliberately knows nothing about how a contract got onto the board (see the file
+		-- header), and renewal must not be the thing that breaks that.
+		if contract.didFulfilTerm and self.renewalHandler ~= nil then
+			self.renewalHandler.callback(self.renewalHandler.target, contract)
+		end
 
 		if self.reputation ~= nil then
 			if contract.didFulfilTerm then

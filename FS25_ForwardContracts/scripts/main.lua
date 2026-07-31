@@ -71,6 +71,11 @@ function ForwardContracts:loadMap(name)
 
 		self.deliveryWatch:addListener(self.settlement, Settlement.onDelivery)
 
+		-- A contract completing in good standing brings its buyer straight back. Wired as a
+		-- handler because ContractStore must not learn how the board works — and it has to
+		-- fire during settlement, since the completed contract is pruned moments later.
+		self.contractStore:setRenewalHandler(self.offers, Offers.createRenewalOffer)
+
 		-- Livestock rides the same settlement rails as everything else: Animals observes
 		-- and judges, Settlement pays. It needs the genetics provider because judging an
 		-- animal against a contract's trait floors is Animals' knowledge, not its own.

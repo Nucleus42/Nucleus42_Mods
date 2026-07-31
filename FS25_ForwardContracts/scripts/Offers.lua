@@ -124,6 +124,11 @@ Offers.SPOT_QUOTA_SHARE = { 0.02, 0.05 }
 -- How long an offer sits on the board before it lapses.
 Offers.OFFER_LIFETIME_DAYS = 3
 
+-- A renewal stands twice as long. It is an invitation from a buyer who already knows you, not
+-- a cold approach — and because it costs a contract slot, the player may need time to decide
+-- what to let go of first. See Offers:createRenewalOffer.
+Offers.RENEWAL_LIFETIME_DAYS = 6
+
 Offers.KIND_ANIMAL = "animal"
 
 --- The breeder ladder, and it runs BACKWARDS on purpose (HANDOFF.md §4.6).
@@ -956,6 +961,102 @@ function Offers.getLitresPerAnimalYear(fillTypeIndex)
 	local daysPerPeriod = (environment ~= nil and environment.daysPerPeriod) or 1
 
 	return perDay * daysPerPeriod * Environment.PERIODS_IN_YEAR
+end
+
+-- ---------------------------------------------------------------------------
+-- Renewal
+-- ---------------------------------------------------------------------------
+
+--- A contract completed in good standing. The same buyer comes back for the same product.
+---
+--- The user's narrative, 2026-08-01, and it is the design record:
+---
+---   *"Your eggs are quality and you have never let us down. We have expanded and now need
+---   more eggs. Are you up to the task? You haven't let us down so you get first refusal as
+---   you are our preferred egg supplier."*
+---
+--- **NO NEW PRICING, AND THAT IS DELIBERATE.** A renewal is bigger and better paid without a
+--- single new constant, because both were already earned when the contract completed:
+---
+---   * `ClientRegistry:onContractCompleted` added +0.08 to `client.size`, and size scales the
+---     money target — so the renewal asks for MORE and pays MORE.
+---   * `relationship` lifts their opening anchor, lifts their hidden ceiling by up to 0.10 and
+---     softens stubbornness by up to 30% (`Negotiation.createProfile`). A stranger tops out at
+---     0.94 of market; a proven supplier reaches 1.02-1.12.
+---
+--- Paying a renewal premium ON TOP would charge the client twice for the same achievement —
+--- the same double-counting error caught on the crop ladder. User: option (a), *"a is the
+--- design. Just now it is guaranteed."*
+---
+--- **WHAT RENEWAL ACTUALLY ADDS IS CERTAINTY AND TIMING.** Without it, whether that buyer
+--- returns is `REUSE_CHANCE` — a 55% coin flip, weighted by relationship, that may land days
+--- later on a different product. With it, they come back now, for the thing you just proved
+--- you could supply.
+---
+--- Generated with `force`, so it appears even when the board is already full of offers. It is
+--- NOT exempt from the contract budget: signing re-checks, so a farm at its limit sees the
+--- invitation and must drop something to take it. User: *"This is the 'farmer must make the
+--- decision' factor. Their farm, their choice."*
+function Offers:createRenewalOffer(contract)
+	if contract == nil or contract.farmId == nil then
+		return nil
+	end
+
+	-- A spot order is a single delivery, not a relationship. There is nothing to renew.
+	if contract.kind == ContractStore.KIND_SPOT then
+		return nil
+	end
+
+	local client = self.clients ~= nil and self.clients.getClientById ~= nil
+		and self.clients:getClientById(contract.clientId) or nil
+
+	-- The buyer IS the feature. Falling back to a stranger would quietly turn a renewal into
+	-- an ordinary offer wearing a renewal label.
+	if client == nil then
+		return nil
+	end
+
+	local reputation = self:getReputation(contract.farmId)
+	local offer
+
+	if contract.unit == ContractStore.UNIT_HEAD then
+		offer = self:createAnimalOffer(contract.farmId, reputation, {
+			subTypeName = contract.subTypeName,
+			contractType = contract.contractType,
+			clientId = contract.clientId,
+			force = true,
+		})
+	else
+		offer = self:createRenewalSupplyOffer(contract, client, reputation)
+	end
+
+	if offer == nil then
+		return nil
+	end
+
+	offer.isRenewal = true
+
+	-- STANDS TWICE AS LONG as a cold approach. An invitation from a buyer who knows you is not
+	-- a three-day ultimatum, and a farm at its budget limit needs room to decide what to drop.
+	offer.expiryDay = g_currentMission.environment.currentMonotonicDay
+		+ Offers.RENEWAL_LIFETIME_DAYS
+
+	return offer
+end
+
+--- The crop and PRODUCT half of renewal: the same fill type, from the same buyer.
+function Offers:createRenewalSupplyOffer(contract, client, reputation)
+	local sellable = self:getSellableFillTypes()
+	local entry = sellable[contract.fillTypeIndex]
+
+	-- The product may simply not be buyable any more — a station demolished, a mod removed.
+	-- Silence is the right answer; a renewal for something nobody purchases is worse than none.
+	if entry == nil then
+		return nil
+	end
+
+	return self:createSupplyOffer(contract.farmId, { entry }, self:getTier(reputation),
+		reputation, self:getProcessedFillTypes(), contract.contractType, client)
 end
 
 -- ---------------------------------------------------------------------------

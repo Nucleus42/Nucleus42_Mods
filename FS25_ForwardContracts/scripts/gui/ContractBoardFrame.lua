@@ -375,9 +375,10 @@ function ContractBoardFrame:describeEntry(entry)
 	if offer.unit == ContractStore.UNIT_HEAD then
 		-- Labelled by whether the farm has any equipment crossover at all. Both kinds appear
 		-- with equal likelihood; the label only says which kind of decision this is.
-		return string.format("%s — %s", ContractBoardFrame.describeContractType(offer),
-				g_i18n:getText(offer.hasCrossover and "fc_entry_recommendation"
-					or "fc_entry_opportunity")),
+		return ContractBoardFrame.markRenewal(offer,
+				string.format("%s — %s", ContractBoardFrame.describeContractType(offer),
+					g_i18n:getText(offer.hasCrossover and "fc_entry_recommendation"
+						or "fc_entry_opportunity"))),
 			-- Cash per head, not a multiplier. The price is flat, so "0.87x value" would
 			-- invite the player to read it as a share of whatever they deliver.
 			string.format("%d animals per year for %d years · %s per head · %s",
@@ -390,14 +391,16 @@ function ContractBoardFrame:describeEntry(entry)
 	-- distinguishes it. Labelling it as produce tells the player it comes off their animals
 	-- rather than out of a field.
 	if offer.contractType == "PRODUCT" then
-		return string.format("%s — %s", ContractBoardFrame.describeContractType(offer),
-				productName(offer.fillTypeIndex)),
+		return ContractBoardFrame.markRenewal(offer,
+				string.format("%s — %s", ContractBoardFrame.describeContractType(offer),
+					productName(offer.fillTypeIndex))),
 			string.format("%s per year for %d years · %s",
 				g_i18n:formatVolume(offer.quotaPerYear), offer.years, offer.client.name)
 	end
 
-	return string.format("%s — %s", productName(offer.fillTypeIndex),
-			g_i18n:getText("fc_entry_offer")),
+	return ContractBoardFrame.markRenewal(offer,
+			string.format("%s — %s", productName(offer.fillTypeIndex),
+				g_i18n:getText("fc_entry_offer"))),
 		string.format("%s per year for %d years · %s",
 			g_i18n:formatVolume(offer.quotaPerYear), offer.years, offer.client.name)
 end
@@ -661,6 +664,22 @@ function ContractBoardFrame:describeAnimalStock(offer)
 		#eligible, herdSize)
 end
 
+--- Mark a renewal on the board, without changing what kind of contract it says it is.
+---
+--- The user's ruling, 2026-08-01: *"Keep everything as it currently shows (Livestock,
+--- Products, or however it shows) but these specific cases add a label 'Contract renewal'.
+--- That way the user gets the jist of what it is without being hand held through it."*
+---
+--- So it APPENDS. A renewal is still a PRODUCT or a SUPPLY contract and must still read as
+--- one; the label says where it came from, not what it is.
+function ContractBoardFrame.markRenewal(offer, title)
+	if type(offer) ~= "table" or not offer.isRenewal then
+		return title
+	end
+
+	return string.format("%s — %s", title, g_i18n:getText("fc_entry_renewal"))
+end
+
 --- The panel title for a livestock record, naming WHICH KIND of contract it is.
 ---
 --- SUPPLY, BREEDING and PRODUCT are genuinely different businesses (LIVESTOCK_DESIGN §2.4) —
@@ -775,7 +794,8 @@ function ContractBoardFrame:describeDetail(entry)
 	-- overwrote this branch with the product body; the panel read "wants 41 l of ?", the 41
 	-- being a headcount run through formatVolume and the "?" a nil fill type.
 	if offer.unit == ContractStore.UNIT_HEAD then
-		return ContractBoardFrame.describeContractType(offer),
+		return ContractBoardFrame.markRenewal(offer,
+				ContractBoardFrame.describeContractType(offer)),
 			string.format(
 				"%s wants %d animals per year for %d years.\n\n%s\nCompletion bonus: %s each year you meet the quota.\nEverything included, that is roughly %s over the term.\n\nRequirement: %s\n%s\n\n%s\n\n%s\n\nFixed terms, no negotiation. Breeding better does not raise this contract — it raises the next one.",
 				offer.client.name,
@@ -807,7 +827,8 @@ function ContractBoardFrame:describeDetail(entry)
 	-- same unit, same negotiation, same settlement — so it uses the crop body and differs only
 	-- in naming the product and carrying the produce label.
 	if offer.contractType == "PRODUCT" then
-		return ContractBoardFrame.describeContractType(offer),
+		return ContractBoardFrame.markRenewal(offer,
+				ContractBoardFrame.describeContractType(offer)),
 			string.format(
 				"%s wants %s of %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.%s\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
 				offer.client.name,
@@ -821,7 +842,7 @@ function ContractBoardFrame:describeDetail(entry)
 			g_i18n:getText("fc_button_negotiate")
 	end
 
-	return productName(offer.fillTypeIndex),
+	return ContractBoardFrame.markRenewal(offer, productName(offer.fillTypeIndex)),
 		string.format(
 			"%s wants %s per year for %d years.\n\nAt today's price that volume is worth %s over the term.\nSuggested buyer: %s.%s\n\n%s\n\nNegotiate the total, then decide how much of it you take as a guaranteed rate and how much as a completion bonus.",
 			offer.client.name,
