@@ -49,6 +49,81 @@ The contract board is a tab in the ESC menu.
 
 ---
 
+## FS25_SubsoilerTillage
+
+Lets subsoilers do the plough's job.
+
+Any implement in the **Subsoilers** store category gains the three things that previously only
+a plough could do:
+
+- Create new fields (toggle with the same key a plough uses)
+- Leave **ploughed** ground state, clearing the "needs ploughing" warning
+- Count towards ploughing contracts
+
+Nothing else changes. The game still decides when a field needs ploughing; this mod only adds
+another implement that can satisfy it.
+
+> **Trade-off:** an affected subsoiler now leaves ploughed ground instead of cultivated ground,
+> so it no longer completes cultivating contracts.
+
+### Requirements
+
+Farming Simulator 25. No other mods required.
+
+---
+
+## FS25_DeadwoodPointer
+
+Marks the deadwood trees an active contract actually requires.
+
+Deadwood contracts give you a circle on the map and nothing else — no marker in the world,
+unlike rock-clearing contracts, which do get a flag. This fills that gap: every tree the
+contract counts gets a marker above it, and trees that are off-screen get an arrow at the edge
+of the screen pointing the way. A readout shows how many are left and how far the nearest one is.
+
+Only trees belonging to a contract you are actually running are marked, and a tree's marker
+disappears the moment you finish the cut. Trees that merely look dead — and normal trees standing
+among them — are ignored, because ownership is read from the contract itself rather than guessed
+from the tree.
+
+Toggle with **Ctrl+D**.
+
+### Requirements
+
+Farming Simulator 25. Singleplayer.
+
+---
+
+## FS25_AutoDrive_FieldLoops
+
+Generates two-way AutoDrive ring routes around fields, so you don't have to drive every headland
+by hand.
+
+| Command | Effect |
+|---|---|
+| `adfl [offset] [spacing] [mode]` | Ring around the field you are standing in |
+| `adflAll [offset] [spacing] [mode]` | Ring around every field on the map |
+| `adflRefresh [offset] [spacing] [mode]` | Rebuild the ring for the current field |
+| `adflRemove` | Remove the ring for the current field |
+| `adflRemoveAll` | Remove every ring this mod created |
+| `adflInfo` | Report what is under you and what is generated |
+
+`mode` is either **`map`** — the surveyed field boundary, instant — or **`scan`**, which traces
+the ground you have actually ploughed. Scan is slower but picks up field extensions and merged
+fields that the surveyed boundary doesn't know about.
+
+### Requirements
+
+| | |
+| --- | --- |
+| **Farming Simulator 25** | required |
+| **[AutoDrive](https://github.com/Stephan-S/FS25_AutoDrive)** (`FS25_AutoDrive`) | **required — the mod will not work without it** |
+
+AutoDrive is the work of its own authors and is licensed separately. This repository contains
+none of its code: Field Loops reads AutoDrive's live objects at run time and ships nothing of it.
+
+---
+
 ## Credits
 
 **Realistic Livestock** is the work of its own authors and is licensed separately under the

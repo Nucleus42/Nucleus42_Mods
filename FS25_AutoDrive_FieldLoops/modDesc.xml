@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<modDesc descVersion="103">
+    <author>m.p.tetlow</author>
+    <version>0.1.0.0</version>
+
+    <title>
+        <en>AutoDrive Field Loops</en>
+    </title>
+
+    <description>
+        <en><![CDATA[
+Generates two-way AutoDrive ring routes around fields, so you do not have to drive
+every headland by hand.
+
+Console commands:
+  adfl [offset] [spacing] [mode]      ring around the field you are standing in
+  adflAll [offset] [spacing] [mode]   ring around every field on the map
+  adflRefresh [offset] [spacing] [mode]  rebuild the ring for the current field
+  adflRemove                          remove the ring for the current field
+  adflRemoveAll                       remove every ring this mod created
+  adflInfo                            report what is under you and what is generated
+
+mode is "map" (surveyed field boundary, instant) or "scan" (traces the ground you
+have actually ploughed, slower, picks up extensions and merged fields).
+
+Requires FS25_AutoDrive.
+]]></en>
+    </description>
+
+    <iconFilename>icon.dds</iconFilename>
+
+    <multiplayer supported="true"/>
+
+    <extraSourceFiles>
+        <sourceFile filename="scripts/ADFieldLoops.lua"/>
+    </extraSourceFiles>
+</modDesc>

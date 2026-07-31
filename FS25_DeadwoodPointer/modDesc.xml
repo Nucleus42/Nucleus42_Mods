@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<modDesc descVersion="108">
+    <author>m.p.tetlow</author>
+    <version>1.0.0.0</version>
+
+    <title>
+        <en><![CDATA[Deadwood Tree Pointer]]></en>
+    </title>
+
+    <description>
+        <en><![CDATA[
+Marks the deadwood trees that an active contract actually requires.
+
+Deadwood contracts give you a circle on the map and nothing else — no marker in the world, unlike
+rock-clearing contracts, which do get a flag. This mod fills that gap: every tree the contract counts
+gets a marker above it, and trees that are off-screen get an arrow at the edge of the screen pointing
+the way. A readout shows how many are left and how far the nearest one is.
+
+Only trees belonging to a contract you are actually running are marked, and a tree's marker disappears
+the moment you finish the cut. Trees that merely look dead, and normal trees standing among them, are
+ignored — ownership is read from the contract itself, not guessed from the tree.
+
+Toggle with Ctrl+D. Singleplayer.
+        ]]></en>
+    </description>
+
+    <iconFilename>icon_DeadwoodPointer.dds</iconFilename>
+
+    <multiplayer supported="false" />
+
+    <l10n filenamePrefix="translations/translation" />
+
+    <extraSourceFiles>
+        <sourceFile filename="scripts/DeadwoodPointer.lua" />
+    </extraSourceFiles>
+
+    <actions>
+        <action name="DWPOINTER_TOGGLE" category="ONFOOT VEHICLE"
+                axisType="HALF" ignoreComboMask="false">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_lctrl KEY_d" />
+        </action>
+    </actions>
+</modDesc>

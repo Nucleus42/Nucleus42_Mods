@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<l10n>
+    <texts>
+        <text name="input_DWPOINTER_TOGGLE" text="Toggle Deadwood Pointer" />
+        <text name="dwPointer_on" text="Deadwood Pointer ON" />
+        <text name="dwPointer_off" text="Deadwood Pointer OFF" />
+    </texts>
+</l10n>
