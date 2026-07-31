@@ -1591,7 +1591,22 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		return nil
 	end
 
-	local years = math.random(tier.years[1], tier.years[2])
+	-- ⚠ **THE TERM IS DAYS. `years` IS A LABEL ROUNDED OFF IT, NOT THE OTHER WAY ROUND.**
+	--
+	-- `termDays` is what `ContractStore` signs, settles and persists — a 2.18-year oak term is
+	-- 26 days at the default 1-day months, and no integer number of years can say that. `years`
+	-- survives only because the board and `fcContracts` print "year N of M", and `termYears`
+	-- because the offer line reads "within 2.18 years".
+	--
+	-- ⛔ **NEVER RECONSTRUCT THE QUOTA AS `quotaPerYear * years`.** Both are rounded, so the
+	-- product is a different number — see `ContractStore:signContract`. `quotaTotal` is the
+	-- authoritative figure and everything else is derived from it.
+	--
+	-- Rolled in whole years HERE ONLY because the species tiers that supply a real fractional
+	-- term are phase-3 step 3. This is the transitional source, not the design.
+	local termYears = math.random(tier.years[1], tier.years[2])
+	local termDays = math.max(1, math.floor(termYears * ContractStore.getDaysPerYear() + 0.5))
+	local years = math.max(1, math.ceil(termYears))
 
 	-- Wood is not a production output, so it is never "processed" and the client pool is the
 	-- ordinary one. Resolved BEFORE the money, because `rollAnnualValue` reads `client.size` and
@@ -1606,12 +1621,24 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		return nil
 	end
 
+	-- MONEY FIRST, LITRES DERIVED, PRO-RATED BY TERM. FORESTRY.md §3, in the user's words:
+	-- *"If crop is £100,000 over 2 years then forestry should be £150,000 over 3. This makes the
+	-- pricing exactly the same... but forestry just takes longer to do."*
+	--
+	-- ⚠ **DERIVED FROM THE TERM'S TOTAL, NOT A YEAR OF IT.** A species cannot be made to grow
+	-- faster, so a long term must not mean less money per year — `annualValue * termYears` puts
+	-- forestry exactly on the shared ladder and the extra time falls out as a proportionally
+	-- bigger delivery. Deriving one year and multiplying up would round twice and drift.
 	local annualValue = Offers.rollAnnualValue(tier, client)
-	local quotaPerYear = Offers.deriveQuota(annualValue, rate)
+	local quotaTotal = Offers.deriveQuota(annualValue * termYears, rate)
 
-	if quotaPerYear == nil then
+	if quotaTotal == nil then
 		return nil
 	end
+
+	-- DISPLAY ONLY, and it is the derived figure rather than the source. See the note above the
+	-- term calculation: reconstructing `quotaTotal` from this would round twice.
+	local quotaPerYear = quotaTotal / termYears
 
 	local offer = {
 		id = self.nextOfferId,
@@ -1625,6 +1652,13 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		years = years,
 		client = client,
 
+		-- THE TERM, IN THE ONLY UNIT THAT CAN EXPRESS IT. `termDays` is what the contract signs
+		-- and settles on; `termYears` is the fraction the offer line quotes ("within 2.18
+		-- years"); `years` above is the integer the "year N of M" panel counts in. Three
+		-- readings of one term, and only the first is load-bearing.
+		termDays = termDays,
+		termYears = termYears,
+
 		-- POSTED. The rate is settled here and there is no negotiation profile, which is the
 		-- seam the board reads — see `isPosted`.
 		--
@@ -1636,7 +1670,7 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		contractType = forestryTier.contractType,
 
 		-- WHAT THIS CONTRACT IS MEANT TO BE WORTH IN A YEAR, kept so the invariant
-		-- `quotaPerYear * rate == annualValue` is CHECKABLE rather than merely true.
+		-- `quotaTotal * rate == annualValue * termYears` is CHECKABLE rather than merely true.
 		--
 		-- Added because the guard written for that invariant was worthless without it: it
 		-- compared revenue against the rung's full 0.75-1.25 variance band, and a 30% pricing
@@ -1659,7 +1693,11 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		-- What the player is actually committing to, and the number the board should lead with.
 		-- 25,000 l a year reads like a chore; 100,000 l over four years reads like an operation,
 		-- and the second is the honest description of the same deal.
-		quotaTotal = quotaPerYear * years,
+		--
+		-- ⚠ **AUTHORITATIVE. This is what `signContract` uses as the quota, and it is NOT
+		-- `quotaPerYear * years`** — that was the old shape and it reconstructs a different
+		-- number once the term is fractional. See `ContractStore:signContract`.
+		quotaTotal = quotaTotal,
 
 		-- No coverage hint on any forestry tier. FORESTRY.md §1.5 ruling 5: there is no honest
 		-- denominator, because any land grows trees. Tier 3's plant-by-date line is the nudge,
@@ -1714,6 +1752,8 @@ function Offers:acceptForestryOffer(offer)
 		-- compensate for — the contract's value is certainty, not a premium.
 		completionBonus = 0,
 
+		-- DISPLAY COMPANIONS. `quotaPerYear` and `years` are rounded readings of the term for
+		-- the panel and `fcContracts`; neither is what the contract is judged on.
 		quotaPerYear = offer.quotaPerYear,
 		years = offer.years,
 		suggestedStation = offer.suggestedStation,
@@ -1723,6 +1763,19 @@ function Offers:acceptForestryOffer(offer)
 		-- impossible to complete, because the trees they require have not grown yet in years 1
 		-- and 2 and the contract terminates on the second miss. See ContractStore:signContract.
 		isTermQuota = offer.isTermQuota,
+
+		-- **THE THREE FIELDS THAT MAKE THE TERM REAL, AND EACH FAILS SILENTLY IF DROPPED.**
+		--
+		--   `termDays`   — `signContract` falls back to `years * daysPerYear`, rounding a
+		--                  2.18-year oak term up to 3 years. No error; a 38% longer contract.
+		--   `quotaTotal` — `signContract` falls back to `quotaPerYear * years`, reconstructing
+		--                  the quota from two rounded figures. No error; a wrong workload and
+		--                  `quota * rate == annualValue` quietly stops holding.
+		--
+		-- This is the `feedName` / `suggestedStation` shape for the fourth time. Both are in
+		-- `test/field_lists.py` under FORESTRY_FIELDS.
+		termDays = offer.termDays,
+		quotaTotal = offer.quotaTotal,
 	})
 
 	self:removeOffer(offer.id)

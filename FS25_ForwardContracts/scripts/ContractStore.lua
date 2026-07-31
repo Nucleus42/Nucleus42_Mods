@@ -121,6 +121,34 @@ end
 -- tonnage before the rollover, and waiting for the next year would leave a fresh
 -- contract inert for up to twelve in-game days.
 function ContractStore:signContract(spec)
+	-- A FORESTRY TERM IS A NUMBER OF DAYS, AND YEARS CANNOT EXPRESS IT.
+	--
+	-- Terms derive from the species' growth time and land on fractions — oak is 1.98 years of
+	-- growth and a 2.18-year term (FORESTRY.md §3-§4.1). The delivery window at the end is
+	-- MONTHS: 2.4 of them at tier 1. An integer `years` rounds both away, and settling on
+	-- YEAR_CHANGED can only ever judge on a calendar boundary the term does not sit on.
+	--
+	-- ⚠ **DAYS, NOT YEARS, AND THAT IS NOT ARBITRARY.** Trees grow on `getMonotonicHour()`
+	-- (`misc/TreePlantManager.lua:357, :373`), which is absolute game hours and independent of
+	-- month length (`environment/Environment.lua:513-515`). A day is always 24 of those hours,
+	-- so a term stored in DAYS still means the same amount of tree growth after the player
+	-- changes their month length. A term stored in YEARS would silently become a different
+	-- commitment, because a year is `daysPerPeriod * 12` days and that is a live setting.
+	--
+	-- Computed before the contract table so both fields are declared in one place — the
+	-- five-list guard reads that table, and a field assigned further down is a field it cannot
+	-- see. See `test/field_lists.py`.
+	local termDays, deadlineDay
+
+	if spec.isTermQuota then
+		-- `spec.termDays` is authoritative. The fallback exists only so a term contract cannot
+		-- be created with no deadline at all, which would leave it unsettleable forever.
+		termDays = spec.termDays
+			or math.max(1, math.floor((spec.years or 1) * self:getDaysPerYear() + 0.5))
+
+		deadlineDay = g_currentMission.environment.currentMonotonicDay + termDays
+	end
+
 	local contract = {
 		id = self.nextId,
 		farmId = spec.farmId,
@@ -163,6 +191,25 @@ function ContractStore:signContract(spec)
 		-- far more than failing one year of it. Judged correct — the player agreed to a term, and
 		-- the panel shows delivered-of-total throughout.
 		isTermQuota = spec.isTermQuota,
+
+		-- HOW LONG THE TERM IS, AND THE DAY IT IS JUDGED. Both nil for everything else.
+		--
+		-- `deadlineDay` is what `onDayChanged` settles against, so **losing it on a save/load
+		-- leaves a forestry contract that can be completed by delivering but can never fail** —
+		-- it would sit on the board forever holding nothing, because nothing else in the mod
+		-- would ever look at it again. `load` re-derives one rather than allow that.
+		termDays = termDays,
+		deadlineDay = deadlineDay,
+
+		-- THE TERM'S QUOTA, KEPT SO `quotaTotal * rate == annualValue` STAYS CHECKABLE rather
+		-- than merely true. Same reason `offer.annualValue` exists: the guard written for that
+		-- invariant was worthless without a stored target to check against, and a 30% pricing
+		-- error fitted comfortably inside the rung's own variance band.
+		--
+		-- It is also what the board reports progress against — "120,000 of 204,188 delivered"
+		-- for the whole term — and `quotaThisYear` is not safe for that job, because
+		-- `settleContractYear` rewrites it every year for ordinary contracts.
+		quotaTotal = spec.quotaTotal,
 
 		-- LIVESTOCK ONLY, AND IT NO LONGER SETTLES ANYTHING. `Offers:createAnimalOffer` rolls it
 		-- within the tier's band and `rate` is already `anchor x rateMultiplier`, so this is
@@ -236,12 +283,21 @@ function ContractStore:signContract(spec)
 		contract.expiryDay = g_currentMission.environment.currentMonotonicDay
 			+ (spec.durationDays or 1)
 	elseif contract.isTermQuota then
-		-- ONE QUOTA FOR THE WHOLE TERM, settled once at the end. See the field's comment above.
+		-- ONE QUOTA FOR THE WHOLE TERM, settled once at the deadline. See the field's comment.
 		--
-		-- No pro-rata. The term is N years from signing, not N calendar years, so there is no
-		-- part-year to scale — and scaling would quietly shrink a commitment the player agreed
-		-- to in full.
-		contract.quotaThisYear = spec.quotaPerYear * (spec.years or 1)
+		-- No pro-rata. The term runs from the DAY OF SIGNING, not across calendar years, so
+		-- there is no part-year to scale — and scaling would quietly shrink a commitment the
+		-- player agreed to in full.
+		--
+		-- ⚠ **`quotaTotal` IS AUTHORITATIVE AND `quotaPerYear * years` IS NOT.** A forestry
+		-- quota is derived straight from money and a FRACTIONAL term — `annualValue * term /
+		-- chipPrice` (FORESTRY.md §3) — so `quotaPerYear` and `years` are display companions
+		-- rounded off it, not its parts. Multiplying them back together reconstructs a
+		-- DIFFERENT number: a 2.18-year oak contract would come out as 2 or 3 years' worth, an
+		-- 8-37% error in the workload, and `quota * rate == annualValue` would quietly stop
+		-- holding. The fallback is for the pre-day-granularity shape only.
+		contract.quotaTotal = contract.quotaTotal or (spec.quotaPerYear * (spec.years or 1))
+		contract.quotaThisYear = contract.quotaTotal
 	else
 		contract.quotaThisYear = math.floor(spec.quotaPerYear * self:getYearFractionRemaining())
 	end
@@ -449,20 +505,68 @@ function ContractStore:onDayChanged()
 	local today = g_currentMission.environment.currentMonotonicDay
 
 	for _, contract in ipairs(self.contracts) do
-		if contract.kind == ContractStore.KIND_SPOT
-			and not contract.isComplete
-			and contract.expiryDay ~= nil
-			and today >= contract.expiryDay then
-			-- An expired spot order is a missed commitment, not a quiet disappearance.
-			contract.isComplete = true
+		if contract.isComplete then
+			-- Nothing to do. Guarded once here rather than in each branch below.
+		elseif contract.kind == ContractStore.KIND_SPOT then
+			if contract.expiryDay ~= nil and today >= contract.expiryDay then
+				-- An expired spot order is a missed commitment, not a quiet disappearance.
+				contract.isComplete = true
 
-			if self.reputation ~= nil then
-				self.reputation:onSpotOrderExpired(contract)
+				if self.reputation ~= nil then
+					self.reputation:onSpotOrderExpired(contract)
+				end
+			end
+		elseif contract.isTermQuota then
+			-- FORESTRY'S DEADLINE. Judged HERE and never on YEAR_CHANGED, because a 2.18-year
+			-- term does not land on a calendar boundary. `expiryDay` and `deadlineDay` are
+			-- deliberately different fields: a spot order lapses, a term contract is JUDGED,
+			-- and one of the two charges a penalty.
+			if contract.deadlineDay ~= nil and today >= contract.deadlineDay then
+				self:settleTermContract(contract)
 			end
 		end
 	end
 
 	self:pruneCompleted()
+end
+
+--- The deadline arrived. A term contract is judged ONCE, here, on the whole term.
+---
+--- Deliberately the mirror of `settleContractYear`'s FINAL-year branch and of nothing else —
+--- there is no early failure and no mid-term pressure, because the trees the contract requires
+--- have not grown yet for most of it (see `signContract`).
+---
+--- The success path is `completeTermContract`, which `recordDelivery` already calls the instant
+--- the quota is met. So a contract that finished early never reaches here at all: it was
+--- pruned, and its slot came back years ago. **"Within X years" is a deadline, not a duration.**
+function ContractStore:settleTermContract(contract)
+	local quota = contract.quotaThisYear or 0
+	local delivered = contract.deliveredThisYear or 0
+
+	if quota <= 0 or delivered >= quota then
+		self:completeTermContract(contract)
+		return
+	end
+
+	-- The penalty is charged on the WHOLE TERM'S value, because `quotaThisYear` is the term's
+	-- quota. That is the counterweight to there being no mid-term pressure: ignoring an 8-year
+	-- deal costs far more than failing one year of a crop contract. See `signContract`.
+	self:onYearMissed(contract, quota, delivered)
+
+	-- `onYearMissed` only completes a contract on the SECOND consecutive miss, and a term
+	-- contract is judged exactly once — so it falls through with `consecutiveMisses` at 1 and
+	-- must be closed explicitly. Without this it stays alive past its own deadline, holding a
+	-- slot nothing can ever free.
+	if not contract.isComplete then
+		contract.isComplete = true
+		contract.didFulfilTerm = false
+
+		if self.reputation ~= nil then
+			-- Against the CLIENT only. `onQuotaMissed` inside `onYearMissed` has already
+			-- charged the reputation, and charging again would penalise one failure twice.
+			self.reputation:onContractUnfulfilled(contract)
+		end
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -479,15 +583,39 @@ function ContractStore:onYearChanged()
 	self:pruneCompleted()
 end
 
+--- Days still to run before a term contract is judged. Negative once the deadline has passed
+--- and the day tick has not caught it yet, which is at most one game day.
+---
+--- The BOARD's number, and the reason it is days rather than years: the whole tension of a
+--- forestry contract is the delivery window at the end — 2.4 months at tier 1, 12 at tier 4
+--- (FORESTRY.md §3, §8) — and "0.2 years left" is not a thing anyone can plan a haulage run
+--- around.
+function ContractStore:getDaysRemaining(contract)
+	if contract == nil or contract.deadlineDay == nil then
+		return nil
+	end
+
+	return contract.deadlineDay - g_currentMission.environment.currentMonotonicDay
+end
+
 function ContractStore:settleContractYear(contract)
-	-- A TERM-QUOTA CONTRACT HAS NOTHING TO SETTLE UNTIL ITS LAST YEAR. Advance the clock and
-	-- leave the quota, the delivered total and the miss counter exactly where they are — the
-	-- whole point is that a forestry contract is judged once, on the term.
+	-- A TERM-QUOTA CONTRACT IS NEVER SETTLED BY THE CALENDAR. It is judged once, on its own
+	-- deadline day, by `settleTermContract`.
 	--
-	-- Returning BEFORE `onYearMet`/`onYearMissed` is what makes this safe: those two are the
-	-- only places reputation moves and the only place the penalty is charged, so a mid-term
-	-- year cannot score, cannot penalise and cannot terminate.
-	if contract.isTermQuota and (contract.yearIndex or 1) < (contract.years or 1) then
+	-- > # ⚠ THIS GUARD WAS `yearIndex < years` UNTIL 2026-08-02. IT IS NOW UNCONDITIONAL.
+	-- >
+	-- > The old form let the FINAL year fall through and settle the term on the calendar
+	-- > rollover. That worked only while terms were whole numbers of years. They are not — oak
+	-- > runs 2.18 years — so a term now expires mid-year and the year boundary is the wrong
+	-- > event entirely. `onYearChanged` no longer offers term contracts to this function at
+	-- > all; this is the second lock, not the first.
+	--
+	-- Returning BEFORE `onYearMet`/`onYearMissed` is what makes it safe: those two are the only
+	-- places reputation moves and the only place the penalty is charged, so a calendar rollover
+	-- cannot score a term contract, cannot penalise it and cannot terminate it.
+	--
+	-- `yearIndex` is still advanced so the board's "year N of M" line keeps counting.
+	if contract.isTermQuota then
 		contract.yearIndex = (contract.yearIndex or 1) + 1
 		return
 	end
@@ -681,6 +809,20 @@ function ContractStore:save()
 			setXMLBool(xmlFile, key .. "#isTermQuota", true)
 		end
 
+		-- THE DEADLINE, AND IT IS THE ONE FIELD THAT CAN STRAND A CONTRACT. `onDayChanged` is
+		-- the only thing that judges a term contract; without `deadlineDay` it never fires, and
+		-- the contract can be COMPLETED by delivering but can never FAIL. It would hold its
+		-- place on the board for the rest of the save. `load` re-derives rather than allow it.
+		if contract.termDays ~= nil then
+			setXMLInt(xmlFile, key .. "#termDays", contract.termDays)
+		end
+		if contract.deadlineDay ~= nil then
+			setXMLInt(xmlFile, key .. "#deadlineDay", contract.deadlineDay)
+		end
+		if contract.quotaTotal ~= nil then
+			setXMLFloat(xmlFile, key .. "#quotaTotal", contract.quotaTotal)
+		end
+
 		if contract.subTypeName ~= nil then
 			setXMLString(xmlFile, key .. "#subTypeName", contract.subTypeName)
 		end
@@ -804,6 +946,9 @@ function ContractStore:load()
 				rate = getXMLFloat(xmlFile, key .. "#rate") or 0,
 				rateMultiplier = getXMLFloat(xmlFile, key .. "#rateMultiplier"),
 				isTermQuota = getXMLBool(xmlFile, key .. "#isTermQuota"),
+				termDays = getXMLInt(xmlFile, key .. "#termDays"),
+				deadlineDay = getXMLInt(xmlFile, key .. "#deadlineDay"),
+				quotaTotal = getXMLFloat(xmlFile, key .. "#quotaTotal"),
 				suggestedStation = getXMLString(xmlFile, key .. "#suggestedStation"),
 				subTypeName = getXMLString(xmlFile, key .. "#subTypeName"),
 				ageMin = getXMLInt(xmlFile, key .. "#ageMin"),
@@ -854,6 +999,25 @@ function ContractStore:load()
 				end
 
 				floorIndex = floorIndex + 1
+			end
+
+			-- A TERM CONTRACT WITH NO DEADLINE CAN NEVER BE JUDGED. `onDayChanged` is the only
+			-- thing that settles one, and it needs `deadlineDay`; a nil there produces a
+			-- contract that completes if you deliver and simply never ends if you do not.
+			-- Silent, permanent, and it holds a slot forever.
+			--
+			-- Reachable two ways: a savegame written before day granularity landed, or a
+			-- `#deadlineDay` that failed to parse. Re-derive from the day the save was loaded
+			-- rather than drop the contract — the player is owed the term they signed, and
+			-- restarting the clock is the error that favours them.
+			if contract.isTermQuota and contract.deadlineDay == nil then
+				contract.termDays = contract.termDays
+					or math.max(1, math.floor((contract.years or 1) * self:getDaysPerYear() + 0.5))
+				contract.deadlineDay = g_currentMission.environment.currentMonotonicDay
+					+ contract.termDays
+
+				Logging.warning("[ForwardContracts] Contract %d had no deadline; term restarted "
+					.. "at %d days from today", contract.id, contract.termDays)
 			end
 
 			table.insert(self.contracts, contract)
