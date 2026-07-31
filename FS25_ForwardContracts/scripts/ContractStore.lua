@@ -381,6 +381,44 @@ function ContractStore:recordDelivery(contract, litres, money)
 
 	if contract.kind == ContractStore.KIND_SPOT and contract.remainingLitres <= 0 then
 		self:completeSpotOrder(contract)
+	elseif contract.isTermQuota and not contract.isComplete and contract.remainingLitres <= 0 then
+		self:completeTermContract(contract)
+	end
+end
+
+--- A TERM CONTRACT IS A DEADLINE, NOT A DURATION. Meeting the quota finishes it there and then.
+---
+--- *"It should also be a 'within x years' rather than 'x volume per year for x years'."* — and
+--- "within" is the whole point: a contract that stayed open until its final year would leave a
+--- player who delivered everything early holding a dead slot for years, punishing exactly the
+--- efficiency the contract is meant to reward.
+---
+--- **This is what makes the long forestry terms affordable.** A 4-year contract is a 4-year
+--- WORST CASE, not a 4-year lockup: plant well, harvest early, and the slot comes back. That
+--- was the open worry about tying up half a tier-1 board, and it answers it without an extra
+--- slot or any change to the budget.
+---
+--- `getActiveContractCount` already filters on `isComplete`, so the slot frees the same instant
+--- rather than at the next year change. `pruneCompleted` tidies the record later.
+---
+--- Deliberately mirrors the SUCCESS path in `settleContractYear` and nothing else: there is no
+--- early failure. A term contract can only be judged short at its deadline.
+function ContractStore:completeTermContract(contract)
+	contract.isComplete = true
+	contract.didFulfilTerm = true
+
+	-- Bonus, `yearsMet` and `reputation:onQuotaMet` — the same call the final year would make.
+	self:onYearMet(contract)
+
+	-- Renewal fires HERE for the same reason it fires inside settleContractYear: `didFulfilTerm`
+	-- is not persisted and `pruneCompleted` deletes the contract at the next year change, so
+	-- this is the moment or never. See settleContractYear.
+	if self.renewalHandler ~= nil then
+		self.renewalHandler.callback(self.renewalHandler.target, contract)
+	end
+
+	if self.reputation ~= nil then
+		self.reputation:onContractCompleted(contract)
 	end
 end
 
