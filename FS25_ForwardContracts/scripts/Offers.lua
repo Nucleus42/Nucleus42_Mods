@@ -516,47 +516,54 @@ end
 --- small, and left `Settlement.onDelivery` topping up 67% of the contract's value every year
 --- in one direction. That is not a hedge, it is a subsidy with a delivery requirement.
 ---
---- **MEASURED IN GAME 2026-08-01, three species, whole trees felled and delivered as-is.**
---- Volumes are the ones already validated to the litre in FORESTRY.md's yield section.
+--- **THE ANCHOR IS THE BEST RATE WOOD CAN REACH, AND IT IS DERIVED, NOT MEASURED.**
 ---
----   | species        | income | volume (l) | realised £/l | pricePerLiter |   K   |
----   | oak            | £7,190 |     21,638 |       0.3323 |           0.9 | 0.369 |
----   | lodgepolePine  | £2,061 |      5,325 |       0.3870 |           1.0 | 0.387 |
----   | americanElm    | £4,991 |     20,631 |       0.2419 |           0.7 | 0.346 |
+--- `lengthScale` maxes at **1.2** across roughly 6-11 m (`WoodUnloadTrigger.lua:151`), and
+--- `qualityScale` and `defoliageScale` both max at 1.0. So the ceiling on any wood is
+--- `splitType.pricePerLiter x 1.2`, straight out of Giants' own formula. No table, no
+--- measurement, and it self-corrects if the formula ever changes.
 ---
---- Spread 1.12x across three price points and a 4x range of tree volume. The threshold
---- registered BEFORE the measurements was "species-specific if more than 25% apart"; it came
---- in at 12%, so this is ONE constant and not a table.
+--- **CONFIRMED IN GAME 2026-08-01 that the ceiling is reachable**, which is the only part that
+--- needed testing:
 ---
---- **This is the deliberate second exception to the no-magic-numbers rule**, alongside the
---- mature-volume table, and for the same reason: it cannot be read at runtime without felling
---- a tree. Unlike that table it is a single scalar and needs no per-species data.
+---   wood: LODGEPOLEPINE, 1711 l at 1.2000 /l, longest side 8.0 m, listed 1.00, K 1.200
 ---
---- CAVEAT, RECORDED SO IT IS A CHOICE AND NOT AN OVERSIGHT: taken on HARD — **confirmed by the
---- user 2026-08-01** — where `economicDifficulty / numDifficulties` is 1 and the `MathUtil.lerp`
---- at `WoodUnloadTrigger.lua:155-156` is inert, so the scales are raw. On easier settings the
---- quality and defoliage penalties soften toward 1, so K rises and the derived quota runs
---- slightly high. Consistent with the 2026-07-31 ruling to honour the player's difficulty
---- setting rather than compensate for it.
+--- An 8 m delimbed pine log hit every factor's maximum at once. That also confirms a prediction
+--- FORESTRY.md made from the formula alone on 2026-07-28, before any of this was measured.
 ---
---- ⚠ **A CORRECTION TO A CORRECTION — DO NOT RE-DERIVE THE DIFFICULTY FROM A PRICE.** For a few
---- hours this comment claimed the measurements were taken on EASY, inferred from `fcSellable`
---- reporting wood at 1.101 /l: `1.0 x 3 x 0.367`, and 3 is `PRICE_MULTIPLIER[1]`. **The save is
---- on hard and always was.** The 3x came from somewhere else in `getEffectiveFillTypePrice` —
---- most likely a great demand on WOOD at that station (`EconomyManager.lua:310` calls
---- `setPriceMultiplier` with the demand's own multiplier), which is transient and would have
---- made a wood contract's rate swing by 3x depending on the minute it was generated in.
+--- ⚠ **THIS REPLACED A MEASURED 0.367, AND THE REPLACEMENT IS THE WHOLE POINT. DO NOT REVERT.**
+--- The old anchor was the average of three whole trees cut up ordinarily. Three deliveries now
+--- bracket the real range, all on hard, all on one save:
 ---
---- **That makes the raw-base fix more necessary, not less.** It also means the old code's fault
---- was never "the difficulty multiplier"; it was "every multiplier", exactly as this comment
---- block said in the first place. One number is not evidence of a setting.
+---   | delivered                        |     K |
+---   | intact oak, branches on          | 0.008 |
+---   | mixed cut-up wood                | 0.367 |
+---   | 8 m delimbed lodgepole log       | 1.200 |
 ---
---- WOODCHIPS IS NOT AFFECTED and must not be adjusted — chips arrive through an ordinary
---- unload trigger with no `extraAttributes`, so their listed price is the real one.
-Offers.WOOD_REALISED_SHARE = 0.367
+--- **150x.** Anchoring at 0.367 meant a competent player earned `1.200 / 0.367` = **327% of
+--- their rung** — a tier-1 forestry contract paying £98,000 where a tier-1 crop pays £30,000.
+--- The shared ladder, broken, and only visible by adding a year up.
+---
+--- Anchoring at the ceiling instead makes the rung a CAP that perfect cutting reaches exactly
+--- and nothing can exceed, so forestry cannot outpay any other contract type. Sloppy cutting
+--- earns proportionally less, which is the mechanic (see `Settlement:onDelivery`).
+---
+--- **It also removes the mod's only measured scalar.** The mature-volume table is now the sole
+--- exception to the no-magic-numbers rule, which is where FORESTRY.md always said the single
+--- unavoidable exception was.
+---
+--- WOODCHIPS IS NOT AFFECTED and must not be adjusted. Chips arrive through an ordinary unload
+--- trigger with no `extraAttributes`, so their listed price is real. **They also have no craft
+--- axis at all** — once wood is chipped its geometry is gone — which makes chipping the natural
+--- route for branchy species. User, 2026-08-01, on being asked whether oak reaches 1.2:
+--- *"Oak is a royal pain to cut to 8m. The whole point of trees like oak is that they are
+--- woodchip trees not log trees."* So the two fill types are two difficulty routes, and the
+--- game's own data already carries the trade-off in `woodChipsPerLiter`.
+Offers.WOOD_BEST_RATE_SCALE = 1.2
+
 
 --- The rate a delivery of this fill type will ACTUALLY realise, given the station's listed
---- price. Identity for everything except WOOD; see WOOD_REALISED_SHARE for why.
+--- price. Identity for everything except WOOD; see WOOD_BEST_RATE_SCALE for why.
 ---
 --- Species-agnostic on purpose. A tier-1 wood contract cannot know what will be felled, so it
 --- anchors on WOOD's own declared price. Real species run 0.6-1.2 and the common ones cluster
@@ -598,7 +605,7 @@ function Offers.getRealisedRate(fillTypeIndex, effectivePrice)
 		return nil
 	end
 
-	return base * Offers.WOOD_REALISED_SHARE
+	return base * Offers.WOOD_BEST_RATE_SCALE
 end
 
 --- Selling stations that belong to a PRODUCTION POINT somebody owns, keyed by station object.

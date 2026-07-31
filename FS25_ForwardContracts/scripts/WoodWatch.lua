@@ -168,7 +168,7 @@ end
 ---   ratePerLitre = splitType.pricePerLiter * qualityScale * defoliageScale * lengthScale
 ---
 --- **That rate is the REALISED price, not a listed one**, and it is the same quantity
---- `Offers.WOOD_REALISED_SHARE` was measured against. So every delivery the player makes is a
+--- `Offers.WOOD_BEST_RATE_SCALE` anchors contracts against. So every delivery the player makes is a
 --- free K measurement, which is why this logs the ratio.
 function WoodWatch:onWoodValued(litres, ratePerLitre, maxSize, objectId)
 	if not self.inWoodSale then
@@ -252,8 +252,9 @@ function WoodWatch:logPending()
 		return
 	end
 
-	-- The ratio is K for this delivery. WOOD_REALISED_SHARE is 0.367, measured on three whole
-	-- trees; every log line here is another sample, taken on whatever the player actually cut.
+	-- The ratio is K for this delivery, and 1.2 is the ceiling a contract is priced against
+	-- (WOOD_BEST_RATE_SCALE). Measured so far: 0.008 for an intact oak, 0.367 for mixed cut-up
+	-- wood, 1.200 for an 8 m delimbed pine. Every log line here is another sample.
 	local splitType = nil
 	if g_splitShapeManager ~= nil and g_splitShapeManager.getSplitTypeIndexByName ~= nil
 		and g_splitShapeManager.getSplitTypeByIndex ~= nil then

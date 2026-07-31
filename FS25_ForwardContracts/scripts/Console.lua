@@ -842,7 +842,7 @@ function Console:consoleSellable(filterArg)
 	local lines = { string.format("%d contractable fill types (dearest first):", #rows) }
 
 	for _, row in ipairs(rows) do
-		-- WOOD's rate is deliberately NOT its listed price (Offers.WOOD_REALISED_SHARE), and a
+		-- WOOD's rate is deliberately NOT its listed price (Offers.WOOD_BEST_RATE_SCALE), and a
 		-- reader comparing this against the in-game price board would otherwise report a bug.
 		-- The BASE price is shown, not just the multiplier, because the rate came out at 0.365
 		-- rather than the expected 0.367 on the user's save and there was no way to tell from
@@ -850,10 +850,10 @@ function Console:consoleSellable(filterArg)
 		local note = ""
 		if FillType ~= nil and row.name == "WOOD" then
 			local ft = g_fillTypeManager:getFillTypeByIndex(FillType.WOOD)
-			note = string.format("   [base %s x %.3f — realised, not listed]",
+			note = string.format("   [base %s x %.1f — best-cut ceiling, not listed]",
 				type(ft) == "table" and ft.pricePerLiter ~= nil
 					and string.format("%.4f", ft.pricePerLiter) or "?",
-				Offers.WOOD_REALISED_SHARE)
+				Offers.WOOD_BEST_RATE_SCALE)
 		end
 
 		table.insert(lines, string.format("  %-22s %8.3f /l   %s%s",
@@ -870,7 +870,7 @@ end
 --- the seam gets proven before a contract depends on it.
 ---
 --- It also turns every delivery the player makes into a free K measurement.
---- `Offers.WOOD_REALISED_SHARE` is 0.367, taken from three whole trees; the `K` column here is
+--- `Offers.WOOD_BEST_RATE_SCALE` is 1.2, the ceiling any wood can reach; the `K` column here is
 --- the same ratio computed on whatever was actually cut, so the constant can be checked against
 --- ordinary play rather than a measurement run.
 ---
