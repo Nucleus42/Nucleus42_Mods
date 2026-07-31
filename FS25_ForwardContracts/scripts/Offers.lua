@@ -2123,6 +2123,18 @@ function Offers:refreshSpotOffers(farmId, spotCount, candidates, tier, processed
 end
 
 --- Spot orders are take-it-or-leave-it: a set price, no haggling, short fuse.
+---
+--- **NO COVERAGE HINT HERE, AND THAT IS A RULING RATHER THAN AN OVERSIGHT.** User, 2026-08-01:
+--- *"Spot orders should not have any coverage hint. These are quick turnaround contracts that
+--- are solely up to the user's discretion."*
+---
+--- The nudge exists on annual contracts because those are multi-year commitments with a
+--- penalty, a reputation cost and a termination clause behind them. A spot order is one small
+--- delivery on a two-day fuse that you can simply decline. Adding a hint would be the mod
+--- having an opinion about a decision that costs nothing to get wrong.
+---
+--- The harness asserts this function never mentions `coverageHint`.
+-- coverageHint
 function Offers:createSpotOffer(farmId, candidates, tier, processed)
 	local pick = candidates[math.random(#candidates)]
 	local complexity = self:getComplexity(pick.fillTypeIndex, processed)
