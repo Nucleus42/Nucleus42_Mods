@@ -874,7 +874,10 @@ end
 --- the same ratio computed on whatever was actually cut, so the constant can be checked against
 --- ordinary play rather than a measurement run.
 ---
---- OFF by default. It writes a line per TREE, and a trailer of logs would flood log.txt.
+--- **ON by default while forestry is being built.** It used to default off and had to be
+--- re-armed after every launch, which silently cost a measurement — the tree was felled,
+--- processed and sold, and log.txt was empty because the game had restarted in between. Nothing
+--- reported that, and nothing could. See WoodWatch.new.
 function Console:consoleWood(arg)
 	local watch = self.mod.woodWatch
 
@@ -894,6 +897,7 @@ function Console:consoleWood(arg)
 
 	watch.logDeliveries = true
 
-	return "Wood delivery logging ON. Tip a tree at a sawmill you do NOT own and read log.txt: "
-		.. "one line per tree with species, litres, realised rate and implied K."
+	return "Wood delivery logging ON (it is also on by default). Tip a tree at a sawmill you do "
+		.. "NOT own and read log.txt: one line per tree with species, litres, realised rate and "
+		.. "implied K."
 end

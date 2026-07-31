@@ -56,7 +56,22 @@ function WoodWatch.new()
 	self.inWoodSale = false
 
 	self.isInstalled = false
-	self.logDeliveries = false
+
+	-- ⚠ ON BY DEFAULT, DELIBERATELY, AND ONLY WHILE FORESTRY IS BEING BUILT.
+	--
+	-- It was off by default and had to be re-armed with `fcWood` after every launch. That cost
+	-- a real measurement on 2026-08-01: a whole tree was felled, processed and sold to measure
+	-- the per-species K, and log.txt was empty because the game had been restarted in between.
+	-- **Nothing said the logging was off, and nothing could — the failure is silent by
+	-- construction.**
+	--
+	-- One line per TREE is nothing beside FS25's own log volume, and every line is a free K
+	-- sample on whatever the player actually cut. `fcWood off` still silences it for the
+	-- session.
+	--
+	-- **REVISIT BEFORE RELEASE.** A shipped mod should not write to log.txt in normal play;
+	-- flip this to false once forestry's constants are settled.
+	self.logDeliveries = true
 
 	return self
 end
