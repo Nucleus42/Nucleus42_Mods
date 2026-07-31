@@ -844,9 +844,16 @@ function Console:consoleSellable(filterArg)
 	for _, row in ipairs(rows) do
 		-- WOOD's rate is deliberately NOT its listed price (Offers.WOOD_REALISED_SHARE), and a
 		-- reader comparing this against the in-game price board would otherwise report a bug.
+		-- The BASE price is shown, not just the multiplier, because the rate came out at 0.365
+		-- rather than the expected 0.367 on the user's save and there was no way to tell from
+		-- this screen whether the base was 1.0. Print the input, not only the arithmetic.
 		local note = ""
 		if FillType ~= nil and row.name == "WOOD" then
-			note = string.format("   [realised: listed x %.3f]", Offers.WOOD_REALISED_SHARE)
+			local ft = g_fillTypeManager:getFillTypeByIndex(FillType.WOOD)
+			note = string.format("   [base %s x %.3f — realised, not listed]",
+				type(ft) == "table" and ft.pricePerLiter ~= nil
+					and string.format("%.4f", ft.pricePerLiter) or "?",
+				Offers.WOOD_REALISED_SHARE)
 		end
 
 		table.insert(lines, string.format("  %-22s %8.3f /l   %s%s",

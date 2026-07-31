@@ -72,6 +72,19 @@ end
 --- Losing them would stop every wood sale on the map dead. DeliveryWatch carries the same
 --- helper and the same warning; duplicated rather than shared because the two modules are
 --- installed independently and neither should be able to break the other by being absent.
+--- ⚠ **THE RESULTS GO THROUGH AS A TABLE, AND THEY MUST.** The first version wrote
+--- `newFunc(unpack(results), ...)`, which looks right and is not: in Lua a `...`-expansion is
+--- **truncated to a single value unless it is the LAST expression in the argument list**. So
+--- the callback received `(litres, trigger, objectId)` instead of
+--- `(litres, rate, maxSize, trigger, objectId)`, `objectId` arrived nil, `getSpeciesName(nil)`
+--- returned nil, and every wood delivery was silently discarded.
+---
+--- Nothing failed. No error, no warning, no log line — `fcWood` simply printed nothing forever.
+--- Reported from play 2026-08-01 as "Nothing happened", which is exactly what a truncated
+--- argument list looks like from the outside.
+---
+--- **The harness did not catch it because every check called `onWoodValued` directly and none
+--- went through the wrapper.** A guard on the thing under the seam is not a guard on the seam.
 local function appendPreservingReturn(oldFunc, newFunc)
 	if oldFunc == nil then
 		return newFunc
@@ -79,7 +92,7 @@ local function appendPreservingReturn(oldFunc, newFunc)
 
 	return function(...)
 		local results = { oldFunc(...) }
-		newFunc(unpack(results), ...)
+		newFunc(results, ...)
 		return unpack(results)
 	end
 end
@@ -114,25 +127,31 @@ function WoodWatch:install()
 		watch.saleFarmId = farmId
 		watch.pending = nil
 
-		local ok, result = pcall(baseProcessWood, trigger, farmId, ...)
+		-- ALL returns, not just the first. Giants' processWood returns nothing today, so
+		-- `local ok, result = pcall(...)` would work by luck — but this wraps a function any
+		-- other mod may have overridden, and the truncating version of exactly this pattern is
+		-- what broke the species hook one level down. Do it properly in both places.
+		local results = { pcall(baseProcessWood, trigger, farmId, ...) }
 
 		watch.inWoodSale = false
 		watch.saleFarmId = nil
 		watch.pending = nil
 
-		if not ok then
+		if not results[1] then
 			Logging.error("[ForwardContracts] WoodUnloadTrigger:processWood failed: %s",
-				tostring(result))
+				tostring(results[2]))
 			return
 		end
 
-		return result
+		return unpack(results, 2)
 	end
 
+	-- `results` is what calculateWoodBaseValue returned: litres, rate per litre, maxSize
+	-- (`WoodUnloadTrigger.lua:159`). `trigger` and `objectId` are its original arguments.
 	WoodUnloadTrigger.calculateWoodBaseValue = appendPreservingReturn(
 		WoodUnloadTrigger.calculateWoodBaseValue,
-		function(litres, ratePerLitre, maxSize, trigger, objectId)
-			watch:onWoodValued(litres, ratePerLitre, maxSize, objectId)
+		function(results, trigger, objectId)
+			watch:onWoodValued(results[1], results[2], results[3], objectId)
 		end)
 
 	self.isInstalled = true

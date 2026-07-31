@@ -532,23 +532,24 @@ end
 --- mature-volume table, and for the same reason: it cannot be read at runtime without felling
 --- a tree. Unlike that table it is a single scalar and needs no per-species data.
 ---
---- ⚠ **CORRECTED 2026-08-01: THE MEASUREMENTS WERE TAKEN ON EASY, NOT HARD.** This comment
---- originally claimed hard, on the strength of a note about a different save. `fcSellable`
---- reported wood at 1.101 /l, which is `1.0 x 3 x 0.367`, and 3 is `PRICE_MULTIPLIER[1]` —
---- easy (`EconomyManager.lua:13`). Paper Factory declares no `priceScale` for WOOD, so the
---- 3x has no other source.
+--- CAVEAT, RECORDED SO IT IS A CHOICE AND NOT AN OVERSIGHT: taken on HARD — **confirmed by the
+--- user 2026-08-01** — where `economicDifficulty / numDifficulties` is 1 and the `MathUtil.lerp`
+--- at `WoodUnloadTrigger.lua:155-156` is inert, so the scales are raw. On easier settings the
+--- quality and defoliage penalties soften toward 1, so K rises and the derived quota runs
+--- slightly high. Consistent with the 2026-07-31 ruling to honour the player's difficulty
+--- setting rather than compensate for it.
 ---
---- The direction of the caveat therefore INVERTS. On easy the `MathUtil.lerp` at
---- `WoodUnloadTrigger.lua:155-156` pulls `qualityScale` and `defoliageScale` toward 1, so the
---- penalties are SOFTENED and K is measured HIGH. **On hard the true K is lower than 0.367**,
---- and the derived quota there runs slightly small — the opposite of what was recorded.
+--- ⚠ **A CORRECTION TO A CORRECTION — DO NOT RE-DERIVE THE DIFFICULTY FROM A PRICE.** For a few
+--- hours this comment claimed the measurements were taken on EASY, inferred from `fcSellable`
+--- reporting wood at 1.101 /l: `1.0 x 3 x 0.367`, and 3 is `PRICE_MULTIPLIER[1]`. **The save is
+--- on hard and always was.** The 3x came from somewhere else in `getEffectiveFillTypePrice` —
+--- most likely a great demand on WOOD at that station (`EconomyManager.lua:310` calls
+--- `setPriceMultiplier` with the demand's own multiplier), which is transient and would have
+--- made a wood contract's rate swing by 3x depending on the minute it was generated in.
 ---
---- Not corrected by arithmetic, because the lerp acts on two of the three factors and not on
---- `lengthScale`, so K does not simply scale. `fcWood` logs the ratio for every delivery the
---- player makes, which is the cheap way to re-measure it on whatever difficulty they play.
----
---- Consistent either way with the 2026-07-31 ruling to honour the player's difficulty setting
---- rather than compensate for it.
+--- **That makes the raw-base fix more necessary, not less.** It also means the old code's fault
+--- was never "the difficulty multiplier"; it was "every multiplier", exactly as this comment
+--- block said in the first place. One number is not evidence of a setting.
 ---
 --- WOODCHIPS IS NOT AFFECTED and must not be adjusted — chips arrive through an ordinary
 --- unload trigger with no `extraAttributes`, so their listed price is the real one.
