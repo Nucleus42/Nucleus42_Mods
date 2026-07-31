@@ -24,6 +24,7 @@ Console.COMMANDS = {
 	{ name = "fcFood", desc = "Show each species' food groups, effort rating and contract scale", fn = "consoleFood" },
 	{ name = "fcOffer", desc = "Force an offer: [supply|breeding|product] [species or fillType] [client] [tier]", fn = "consoleOffer" },
 	{ name = "fcFeed", desc = "Show what this farm has fed and the equipment it proves. 'clear' wipes it", fn = "consoleFeed" },
+	{ name = "fcSellable", desc = "List every fill type the board may contract, with its rate and best buyer [filter]", fn = "consoleSellable" },
 }
 
 function Console.new(mod)
@@ -781,6 +782,75 @@ function Console:consoleAnimals()
 	end
 
 	table.insert(lines, string.format("%d of %d animals qualify.", qualifying, #herd))
+
+	return table.concat(lines, "\n")
+end
+
+--- `fcSellable [filter]` — every fill type `Offers:getSellableFillTypes` will contract, with
+--- the rate a delivery REALISES and the best-paying buyer.
+---
+--- **Written because a play session was spent on a question this answers in a keystroke.** On
+--- 2026-08-01 the user was asked to run `fcOffer supply WOOD` to find out whether wood reaches
+--- the board. It could never have worked: `Console.OFFER_TYPES.supply` maps to the LIVESTOCK
+--- contract type, so that command asked for an animal contract for a species called WOOD and
+--- silently did nothing. `fcOffer` has no way to force a crop offer, for any fill type.
+---
+--- The board picks ONE candidate at random from this pool per slot, so "I have never seen a
+--- wheat contract" and "wheat is not contractable" look identical from the outside. This tells
+--- them apart, and it does it for every fill type at once rather than one guess at a time.
+---
+--- Reads the live cache path, so it reflects exactly what the generator would see — including
+--- the train-only and owned-production-point exclusions. Not a re-derivation.
+function Console:consoleSellable(filterArg)
+	local mod = self.mod
+
+	if mod.offers == nil then
+		return "Offers module not active."
+	end
+
+	local sellable = mod.offers:getSellableFillTypes()
+	local filter = filterArg ~= nil and filterArg ~= "" and tostring(filterArg):upper() or nil
+
+	local rows = {}
+
+	for fillTypeIndex, entry in pairs(sellable) do
+		local name = tostring(g_fillTypeManager:getFillTypeNameByIndex(fillTypeIndex) or "?")
+		local title = tostring(g_fillTypeManager:getFillTypeTitleByIndex(fillTypeIndex) or name)
+
+		if filter == nil or name:find(filter, 1, true) or title:upper():find(filter, 1, true) then
+			table.insert(rows, {
+				name = name,
+				title = title,
+				rate = entry.marketRate or 0,
+				station = entry.stationName or "—",
+			})
+		end
+	end
+
+	if #rows == 0 then
+		return filter ~= nil
+			and string.format("Nothing contractable matching '%s'. Run fcSellable with no "
+				.. "argument to list everything.", tostring(filterArg))
+			or "Nothing on this map is contractable. That is almost certainly a fault."
+	end
+
+	-- Dearest first: the expensive end is where a money-first quota gets small, which is where
+	-- a wrong rate shows up soonest.
+	table.sort(rows, function(a, b) return a.rate > b.rate end)
+
+	local lines = { string.format("%d contractable fill types (dearest first):", #rows) }
+
+	for _, row in ipairs(rows) do
+		-- WOOD's rate is deliberately NOT its listed price (Offers.WOOD_REALISED_SHARE), and a
+		-- reader comparing this against the in-game price board would otherwise report a bug.
+		local note = ""
+		if FillType ~= nil and row.name == "WOOD" then
+			note = string.format("   [realised: listed x %.3f]", Offers.WOOD_REALISED_SHARE)
+		end
+
+		table.insert(lines, string.format("  %-22s %8.3f /l   %s%s",
+			row.title, row.rate, row.station, note))
+	end
 
 	return table.concat(lines, "\n")
 end

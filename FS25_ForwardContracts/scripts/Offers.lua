@@ -499,12 +499,123 @@ function Offers:getTrainOnlyStations()
 	return excluded
 end
 
+--- ⚠ WOOD IS THE ONE FILL TYPE WHOSE LISTED PRICE IS A LIE. See FORESTRY.md §1.1-1.2.
+---
+--- `SellingStation:sellFillType` takes `extraAttributes.price` IN PLACE OF the whole price
+--- expression (`objects/SellingStation.lua:374-377`), and `WoodUnloadTrigger:processWood`
+--- always supplies one (`triggers/WoodUnloadTrigger.lua:87`) — computed as
+--- `splitType.pricePerLiter * qualityScale * defoliageScale * lengthScale` (`:159`).
+---
+--- So wood delivered through a wood trigger NEVER reaches `getEffectiveFillTypePrice`, and
+--- therefore never sees the seasonal factor, the price drop, the station multiplier or
+--- `EconomyManager.PRICE_MULTIPLIER`. But `getSellableFillTypes` reads exactly that function,
+--- and WOOD is declared at `pricePerLiter="1.0"` with no seasonal factors
+--- (`maps_fillTypes.xml:661`). The mod believed wood fetched £1.00/l. It fetches ~£0.367.
+---
+--- Under money-first that made `quota = annualValue / marketRate` come out THREE TIMES too
+--- small, and left `Settlement.onDelivery` topping up 67% of the contract's value every year
+--- in one direction. That is not a hedge, it is a subsidy with a delivery requirement.
+---
+--- **MEASURED IN GAME 2026-08-01, three species, whole trees felled and delivered as-is.**
+--- Volumes are the ones already validated to the litre in FORESTRY.md's yield section.
+---
+---   | species        | income | volume (l) | realised £/l | pricePerLiter |   K   |
+---   | oak            | £7,190 |     21,638 |       0.3323 |           0.9 | 0.369 |
+---   | lodgepolePine  | £2,061 |      5,325 |       0.3870 |           1.0 | 0.387 |
+---   | americanElm    | £4,991 |     20,631 |       0.2419 |           0.7 | 0.346 |
+---
+--- Spread 1.12x across three price points and a 4x range of tree volume. The threshold
+--- registered BEFORE the measurements was "species-specific if more than 25% apart"; it came
+--- in at 12%, so this is ONE constant and not a table.
+---
+--- **This is the deliberate second exception to the no-magic-numbers rule**, alongside the
+--- mature-volume table, and for the same reason: it cannot be read at runtime without felling
+--- a tree. Unlike that table it is a single scalar and needs no per-species data.
+---
+--- CAVEAT, RECORDED SO IT IS A CHOICE AND NOT AN OVERSIGHT: taken on HARD, where
+--- `economicDifficulty / numDifficulties` is 1 and the `MathUtil.lerp` at
+--- `WoodUnloadTrigger.lua:155-156` is inert. On easier settings the quality and defoliage
+--- penalties soften toward 1, so K rises and the derived quota runs slightly high. Consistent
+--- with the 2026-07-31 ruling to honour the player's difficulty rather than compensate for it.
+---
+--- WOODCHIPS IS NOT AFFECTED and must not be adjusted — chips arrive through an ordinary
+--- unload trigger with no `extraAttributes`, so their listed price is the real one.
+Offers.WOOD_REALISED_SHARE = 0.367
+
+--- The rate a delivery of this fill type will ACTUALLY realise, given the station's listed
+--- price. Identity for everything except WOOD; see WOOD_REALISED_SHARE for why.
+---
+--- Species-agnostic on purpose. A tier-1 wood contract cannot know what will be felled, so it
+--- anchors on WOOD's own declared price. Real species run 0.6-1.2 and the common ones cluster
+--- at 0.7-0.9, so the anchor sits ABOVE most timber and the contract quietly pays about 10%
+--- over free-market selling — which is precisely the "wood price + a modest %" FORESTRY.md has
+--- carried as an untuned constant since 2026-07-28. **It is derived, not tuned.** User ruling
+--- 2026-08-01, offered the neutral alternative of averaging every split type at runtime:
+--- *"Keep the anchor as is."*
+function Offers.getRealisedRate(fillTypeIndex, listedPrice)
+	if FillType ~= nil and fillTypeIndex == FillType.WOOD then
+		return listedPrice * Offers.WOOD_REALISED_SHARE
+	end
+
+	return listedPrice
+end
+
+--- Selling stations that belong to a PRODUCTION POINT somebody owns, keyed by station object.
+---
+--- A production point's selling station is registered like any other
+--- (`objects/ProductionPoint.lua:286`), so `getSellableFillTypes` sees every sawmill, bakery
+--- and carpenter on the map. But `ProductionPoint.lua:221` overrides `getSkipSell` to return
+--- **true** whenever the delivering farm owns or can access the placeable — so `sellFillType`
+--- never runs, no money changes hands, and `DeliveryWatch` sees nothing at all.
+---
+--- Tipping at your OWN production point is feeding it, not selling to it. Counting it as a
+--- market meant the board could name a buyer that pays nothing and credits no contract, and
+--- could take its `marketRate` from a station that never trades.
+---
+--- **Found while building forestry, but it was never a wood-only fault.** Every wood
+--- destination in vanilla data is a production point (sawmill, carpenter, paper factory) with
+--- the sole exception of biomassHeatingPlant, so wood is where it bites hardest — but a farm
+--- that owns a bakery had the same hole for FLOUR.
+---
+--- `AccessHandler.EVERYONE` is 0 (`farms/AccessHandler.lua:2`) and means unowned, which is what
+--- every map's default production point is. Those stay in the pool; they are real buyers.
+---
+--- Farm-agnostic rather than per-farm, because the cache is shared and this mod is single
+--- player first (HANDOFF.md). In multiplayer a rival farm's production point would be excluded
+--- for everyone, which is wrong but harmless and is NOT worth building for now.
+function Offers:getOwnedProductionStations()
+	local owned = {}
+
+	local chainManager = g_currentMission.productionChainManager
+	if chainManager == nil or chainManager.productionPoints == nil then
+		return owned
+	end
+
+	for _, productionPoint in ipairs(chainManager.productionPoints) do
+		local station = productionPoint.unloadingStation
+		local placeable = productionPoint.owningPlaceable
+
+		if station ~= nil and placeable ~= nil and placeable.getOwnerFarmId ~= nil then
+			local ownerFarmId = placeable:getOwnerFarmId()
+
+			if ownerFarmId ~= nil and ownerFarmId ~= 0 then
+				owned[station] = true
+			end
+		end
+	end
+
+	return owned
+end
+
 --- Every fill type some station on this map will pay for, with its best current price.
 ---
 --- Built from the stations themselves, so a map with no oil mill simply never generates
 --- sunflower contracts, and a mod that adds a buyer makes its product contractable with
 --- no changes here. That also means a buyer BUILT LATER becomes contractable on the next
 --- board rebuild with no code change — see the cache note below.
+---
+--- The rate stored is what a delivery will REALISE, not what the station lists. They are the
+--- same number for everything except WOOD — see Offers.getRealisedRate.
 function Offers:getSellableFillTypes()
 	if self.sellableCache ~= nil then
 		return self.sellableCache
@@ -517,11 +628,13 @@ function Offers:getSellableFillTypes()
 
 	local sellable = {}
 	local trainOnly = self:getTrainOnlyStations()
+	local ownedProduction = self:getOwnedProductionStations()
 
 	for _, entry in ipairs(economyManager.sellingStations) do
 		local station = entry.station
 
-		if station ~= nil and station.acceptedFillTypes ~= nil and not trainOnly[station] then
+		if station ~= nil and station.acceptedFillTypes ~= nil and not trainOnly[station]
+			and not ownedProduction[station] then
 			for fillTypeIndex, _ in pairs(station.acceptedFillTypes) do
 				-- Giants uses this same guard when saving station stats: a zero original
 				-- price means the station lists the type but does not really trade it.
@@ -529,7 +642,8 @@ function Offers:getSellableFillTypes()
 					and station.originalFillTypePrices[fillTypeIndex] or 0
 
 				if original > 0 then
-					local price = station:getEffectiveFillTypePrice(fillTypeIndex, ToolType.UNDEFINED) or 0
+					local price = Offers.getRealisedRate(fillTypeIndex,
+						station:getEffectiveFillTypePrice(fillTypeIndex, ToolType.UNDEFINED) or 0)
 
 					local existing = sellable[fillTypeIndex]
 					if existing == nil then
