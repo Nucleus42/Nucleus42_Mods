@@ -211,6 +211,20 @@ function ContractStore:signContract(spec)
 		-- `settleContractYear` rewrites it every year for ordinary contracts.
 		quotaTotal = spec.quotaTotal,
 
+		-- FORESTRY. The species the contract names, and how many of them it implies.
+		--
+		-- ⚠ **BY NAME, NEVER BY INDEX.** Split types are registered at runtime
+		-- (`misc/SplitShapeManager.lua:12-53`) so a mod adding species renumbers them, and a
+		-- stored index would silently retarget the contract at a different tree. The name is
+		-- upper-case and identical in the tree-type registry, the split-type registry and the
+		-- savegame's own `treePlant.xml` — one string identifies a species everywhere (§5.1).
+		--
+		-- `plantingFloor` is stored rather than recomputed: the chip price it was derived at has
+		-- moved by the time anyone asks, so re-deriving would state a different number of trees
+		-- than the one the player agreed to. Same reason `feedName` is stored.
+		speciesName = spec.speciesName,
+		plantingFloor = spec.plantingFloor,
+
 		-- LIVESTOCK ONLY, AND IT NO LONGER SETTLES ANYTHING. `Offers:createAnimalOffer` rolls it
 		-- within the tier's band and `rate` is already `anchor x rateMultiplier`, so this is
 		-- kept as the RECORD of how the rate was reached — `ContractBoardFrame.describeMultiplier`
@@ -823,6 +837,16 @@ function ContractStore:save()
 			setXMLFloat(xmlFile, key .. "#quotaTotal", contract.quotaTotal)
 		end
 
+		-- The species BY NAME. An index would retarget the contract at a different tree if the
+		-- mod list changed — the same reasoning as `#fillType` above, and for the same reason:
+		-- a save that silently swaps the product is worse than one that drops the contract.
+		if contract.speciesName ~= nil then
+			setXMLString(xmlFile, key .. "#speciesName", contract.speciesName)
+		end
+		if contract.plantingFloor ~= nil then
+			setXMLInt(xmlFile, key .. "#plantingFloor", contract.plantingFloor)
+		end
+
 		if contract.subTypeName ~= nil then
 			setXMLString(xmlFile, key .. "#subTypeName", contract.subTypeName)
 		end
@@ -949,6 +973,8 @@ function ContractStore:load()
 				termDays = getXMLInt(xmlFile, key .. "#termDays"),
 				deadlineDay = getXMLInt(xmlFile, key .. "#deadlineDay"),
 				quotaTotal = getXMLFloat(xmlFile, key .. "#quotaTotal"),
+				speciesName = getXMLString(xmlFile, key .. "#speciesName"),
+				plantingFloor = getXMLInt(xmlFile, key .. "#plantingFloor"),
 				suggestedStation = getXMLString(xmlFile, key .. "#suggestedStation"),
 				subTypeName = getXMLString(xmlFile, key .. "#subTypeName"),
 				ageMin = getXMLInt(xmlFile, key .. "#ageMin"),

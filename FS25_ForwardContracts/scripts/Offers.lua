@@ -1446,80 +1446,367 @@ end
 -- Forestry offers — POSTED, not negotiated. FORESTRY.md §1.5 rulings 1 and 2.
 -- ---------------------------------------------------------------------------
 
---- The three forestry tiers, which are a `contractType` AXIS and **NOT a fourth money ladder**.
+--- ⛔ SIMPLE / ECO / SPECIALIST ARE GONE. REPLACED BY SPECIES TIERS 2026-08-02.
 ---
---- FORESTRY.md §1.5 ruling 3 and the amendments block: the mod has FOUR reputation rungs
---- (`Offers.TIERS`, £30/42/60/85k, shared with `ANIMAL_TIERS`) and ONE contract budget. Simple /
---- eco / specialist sit alongside SUPPLY / BREEDING / PRODUCT as a kind of contract, gated by
---- reputation rather than being their own ladder. **Do not give these their own annualValue.**
-Offers.FORESTRY_SIMPLE = "FORESTRY_SIMPLE"
-Offers.FORESTRY_ECO = "FORESTRY_ECO"
-Offers.FORESTRY_SPECIALIST = "FORESTRY_SPECIALIST"
-
---- > # ⛔ `rateMultiplier` WAS REMOVED FROM THESE TIERS ON 2026-08-02. DO NOT RESTORE IT.
---- >
---- > It existed to police LOG QUALITY: an intact oak realises K=0.008 against 1.200 for an 8 m
---- > delimbed log, so a flat rate would have paid 150x too much for tipping whole trees.
---- >
---- > **Woodchips have no quality axis at all.** Once wood is chipped its geometry is gone, and
---- > `WoodCrusher` applies no size or quality gate whatsoever — the only condition is
---- > `splitType.woodChipsPerLiter > 0` (`vehicles/specializations/WoodCrusher.lua:457`). Chips
---- > arrive through an ordinary unload trigger with no `extraAttributes`, so their listed price
---- > is real and every species fetches the same.
---- >
---- > So a multiplier has nothing left to police, and keeping it would actively BREAK THE HEDGE:
---- > `(m-1) x realisedValue` tracks the market instead of locking against it, which is the
---- > opposite of what a forward contract is. Forestry settles FLAT, exactly like a crop.
---- > FORESTRY.md §7, and the settlement note in `Settlement:onDelivery`.
+--- They were a `contractType` axis: any wood at tier 1, provenance at tier 2, named species at
+--- tier 3. The entry rung was the gimmick that killed it — *"no land, no planting, no wait, no
+--- asset. No number could rescue it"* (FORESTRY.md §9). What replaced it is a ladder of SPECIES
+--- banded by growth time, where the band IS the reputation tier (§4.1).
 ---
---- > # ⚠ THESE THREE TIERS ARE THEMSELVES SUPERSEDED and are awaiting phase-3 step 3.
---- >
---- > simple / eco / specialist was a `contractType` axis. The closed design replaces it with
---- > SPECIES tiers banded by growth time, plus a 4a/4b roll — FORESTRY.md §4.1. Nothing
---- > generates a forestry offer yet, so this block is inert in the meantime.
----
---- `minReputation` is a TRUST gate, not a capability one — a buyer wanting provenance-verified
---- timber asks an established supplier, not a stranger. It deliberately does NOT assess whether
---- the player could grow the trees; that is the "never baby the player" rule, and the honest
---- constraint on eco contracts is the TERM, which is derived. See `getForestryTiersFor`.
-Offers.FORESTRY_TIERS = {
-	{ contractType = Offers.FORESTRY_SIMPLE, minReputation = 0.00 },
-	{ contractType = Offers.FORESTRY_ECO, minReputation = 0.25 },
-	{ contractType = Offers.FORESTRY_SPECIALIST, minReputation = 0.50 },
-}
-
---- Whether a forestry tier requires the wood to have been planted and grown by the player.
---- Tier 1 takes any wood from any source, including bought logs — FORESTRY.md, DECIDED
---- 2026-07-28: purchased logs cost more than the contract pays, so the economics police it and
---- the mod does not have to.
-function Offers.forestryNeedsProvenance(contractType)
-	return contractType == Offers.FORESTRY_ECO
-		or contractType == Offers.FORESTRY_SPECIALIST
-end
-
---- Whether a forestry tier names specific species. Only the top one does.
-function Offers.forestryNeedsSpecies(contractType)
-	return contractType == Offers.FORESTRY_SPECIALIST
-end
+--- `forestryNeedsProvenance` and `forestryNeedsSpecies` went with them. **Every** forestry
+--- contract names a species and verifies the planting now, so a per-tier question no longer
+--- exists to ask.
+Offers.FORESTRY = "FORESTRY"
 
 function Offers.isForestryType(contractType)
-	return contractType == Offers.FORESTRY_SIMPLE
-		or contractType == Offers.FORESTRY_ECO
-		or contractType == Offers.FORESTRY_SPECIALIST
+	return contractType == Offers.FORESTRY
 end
 
---- Forestry tiers this reputation may be offered, worst first. Empty is impossible — tier 1
---- gates at zero — so callers may pick from it without a nil check.
-function Offers.getForestryTiersFor(reputation)
-	local available = {}
+--- ⚠ **THE MOD'S ONLY MAGIC NUMBER, AND IT IS MEASURED.** FORESTRY.md §4.2.
+---
+--- Mature volume in litres, per tree, by SPLIT TYPE NAME. `avgVolume` lives in the tree's i3d
+--- geometry and cannot be read at runtime without felling one, so there is no way to derive it.
+--- This is the single deliberate exception to the no-magic-numbers rule, and FORESTRY.md always
+--- said this is where that exception would be.
+---
+--- **Validated in game on three species** by felling and reading live volume: oak 21,635 vs
+--- 21,638, lodgepolePine 5,324 vs 5,325, americanElm 20,631 vs 20,631. A fourth came free —
+--- `fcWood` reported 5,230 l for a penultimate-stage oak against 5,231 measured.
+---
+--- Source: <https://farmingsimdata.com/trees.php>, corroborated by 17 of its 18 growth figures
+--- matching our own measured `growthTimeHours * (stages - 1)` exactly.
+---
+--- ⚠ **A SPECIES NOT IN HERE IS EXCLUDED, AND THERE IS NO FALLBACK.** That is the whole
+--- exclusion mechanism — §4.3's eight rejected species and every modded tree fall out because
+--- they have no measured volume, not because a rule turned them away. Inventing an average
+--- would put a species on the board whose tree count nobody has ever checked.
+---
+--- Reusable if this ever needs re-measuring: litres = `getVolume(splitShapeId) * 1000`, which
+--- matches `volume * splitType.volumeToLiter`, and `volumeToLiter` is 1000 for every real
+--- species (`misc/SplitShapeManager.lua:12-53`).
+Offers.FORESTRY_VOLUMES = {
+	OAK = 21638,
+	BOXELDER = 11141,
+	LODGEPOLEPINE = 5325,
+	AMERICANELM = 20631,
+	BETULAERMANII = 6869,
+	JAPANESEZELKOVA = 21928,
+	NORTHERNCATALPA = 20878,
+	SHAGBARKHICKORY = 16619,
+	TILIAAMURENSIS = 13072,
+	PINUSTABULIFORMIS = 9020,
+}
 
-	for _, tier in ipairs(Offers.FORESTRY_TIERS) do
-		if (reputation or 0) >= tier.minReputation then
-			table.insert(available, tier)
+--- The reference year the tier bands below are stated in: 288 game hours.
+---
+--- `Environment.PERIODS_IN_YEAR * 24` at the DEFAULT one-day month. It is a reference, not a
+--- live reading, and deriving it from the player's own `daysPerPeriod` would be exactly the bug
+--- this constant exists to prevent — see `FORESTRY_TIER_BANDS`.
+Offers.FORESTRY_REFERENCE_HOURS_PER_YEAR = 12 * 24
+
+--- Growth-time boundaries between the four species tiers, in reference years.
+---
+--- The band IS the tier (§4.1). Growth clusters into four groups with wide empty gaps between
+--- them — 1.98 | 3.18-3.61 | 4.24-4.65 | 8.00-10.00 — and these three thresholds sit in the
+--- middles of those gaps, so every base species lands exactly where §4.1 places it and a modded
+--- one finds a sensible home without a table entry.
+---
+--- ⚠ **COMPARED IN REFERENCE YEARS, NEVER IN THE PLAYER'S OWN YEARS, AND THAT IS THE POINT.**
+--- Growth is absolute game HOURS (`misc/TreePlantManager.lua:251`), so a player on three-day
+--- months reaches maturity in the same 570 hours but only a THIRD of a game-year. Banding on
+--- their calendar would drop every species into tier 1 and delete the ladder. Oak is the entry
+--- species because it is quick and horrible to handle, and neither of those changes with a
+--- month-length setting.
+---
+--- The TERM does use their calendar, and correctly — see `getForestrySpecies`.
+Offers.FORESTRY_TIER_BANDS = { 2.6, 3.9, 6.3 }
+
+--- Term is growth plus a tenth, and that tenth is the delivery window at the end. FORESTRY.md
+--- §3: nothing here is tabulated, so any map or mod that changes a growth time self-corrects.
+Offers.FORESTRY_TERM_FACTOR = 1.1
+
+--- Which tier a growth time falls in, 1-4. See FORESTRY_TIER_BANDS.
+function Offers.getForestryTierForGrowth(growthHours)
+	local years = (growthHours or 0) / Offers.FORESTRY_REFERENCE_HOURS_PER_YEAR
+
+	for index, boundary in ipairs(Offers.FORESTRY_TIER_BANDS) do
+		if years < boundary then
+			return index
 		end
 	end
 
-	return available
+	return #Offers.FORESTRY_TIER_BANDS + 1
+end
+
+--- Every species this MAP can actually grow a forestry contract on, with its tier, term and
+--- chip yield. Keyed by split-type name.
+---
+--- **TWO REGISTRIES, JOINED ON `splitTypeIndex`** (§5.4). Species you can PLANT are tree types
+--- (`TreePlantManager:registerTreeType`, `misc/TreePlantManager.lua:180`); species that have a
+--- PRICE and a chip yield are split types (`SplitShapeManager:addSplitType`, hardcoded in
+--- `loadMapData`, `misc/SplitShapeManager.lua:12-53`). A contract must only name something
+--- plantable here, then price it through the split type.
+---
+--- Three filters, and each one has a reason:
+---
+---   1. `supportsPlanting` — the obvious one, but NOT sufficient on its own.
+---   2. **More than one stage.** `supportsPlanting` DEFAULTS TO TRUE when absent
+---      (`TreePlantManager.lua:100`) and `maps_treeTypes.xml` omits it everywhere, so
+---      `deadwood`, `transport` and `ravaged` all read as plantable. They are scripted props
+---      with exactly one stage that can never grow.
+---   3. **A measured volume.** See `FORESTRY_VOLUMES`. No fallback, deliberately. `apple` is
+---      caught here — an orchard tree that would read as a mistake in a timber contract.
+---
+--- ⚠ `growthTimeHours` IS LOADED AS A STRING (`TreePlantManager.lua:98`) and stored unconverted
+--- (`:202`). Giants only ever does arithmetic on it (`:251`, `:382`), where Lua coerces
+--- silently — but `treeType.growthTimeHours > 0` would THROW. `tonumber` at the boundary, once.
+function Offers.getForestrySpecies()
+	local result = {}
+
+	local manager = g_treePlantManager
+	if manager == nil or manager.treeTypes == nil then
+		return result
+	end
+
+	local daysPerYear = ContractStore.getDaysPerYear()
+
+	for _, treeType in ipairs(manager.treeTypes) do
+		local stages = treeType.stages ~= nil and #treeType.stages or 0
+		local hoursPerStage = tonumber(treeType.growthTimeHours)
+		local name = treeType.name ~= nil and string.upper(treeType.name) or nil
+		local volume = name ~= nil and Offers.FORESTRY_VOLUMES[name] or nil
+
+		if treeType.supportsPlanting ~= false and stages > 1
+			and hoursPerStage ~= nil and hoursPerStage > 0 and volume ~= nil then
+
+			-- MATURITY IS PER-STAGE HOURS TIMES THE STAGES STILL TO CLIMB. A sapling is planted
+			-- at stage 1, so it makes `stages - 1` transitions, not `stages`. Confirmed in play:
+			-- 14 of 14 species matched the XML exactly (§5.5).
+			local growthHours = hoursPerStage * (stages - 1)
+
+			local splitType = g_splitShapeManager ~= nil
+				and g_splitShapeManager:getSplitTypeByIndex(treeType.splitTypeIndex) or nil
+			local chipsPerLitre = type(splitType) == "table"
+				and splitType.woodChipsPerLiter or nil
+
+			if chipsPerLitre ~= nil and chipsPerLitre > 0 then
+				-- THE TERM IS DAYS, because a day is always 24 game hours whatever the month
+				-- length. Storing it in years would make the same tree growth a different
+				-- commitment after the player changed a setting.
+				local termDays = math.max(1,
+					math.floor(growthHours * Offers.FORESTRY_TERM_FACTOR / 24 + 0.5))
+
+				result[name] = {
+					name = name,
+					title = treeType.title,
+					treeTypeIndex = treeType.index,
+					splitTypeIndex = treeType.splitTypeIndex,
+
+					growthHours = growthHours,
+					termDays = termDays,
+
+					-- THE WORKING WINDOW: what is left of the term once the trees are finally
+					-- mature. 2.4 months at tier 1, 12 at tier 4. Derived, never stored — it is
+					-- term minus growth and nothing else.
+					windowDays = math.max(1, termDays - math.floor(growthHours / 24 + 0.5)),
+
+					-- Litres of chips one mature tree yields. The planting floor divides by it.
+					chipsPerTree = volume * chipsPerLitre,
+					matureVolume = volume,
+
+					-- BANDED IN REFERENCE YEARS. See FORESTRY_TIER_BANDS.
+					tier = Offers.getForestryTierForGrowth(growthHours),
+
+					-- THE PLAYER'S OWN CALENDAR, and this one is correct in their years: the
+					-- money ladder is per game-year, so a term spanning 2.18 of THEIR years is
+					-- worth 2.18 rungs whatever their month length. The same treatment a crop
+					-- contract gets, which is what keeps forestry on the shared ladder.
+					termYears = termDays / daysPerYear,
+				}
+			end
+		end
+	end
+
+	return result
+end
+
+--- The species a farm at this reputation may be offered, as a plain list.
+---
+--- **ONLY ITS OWN TIER, AND NOTHING BELOW.** User ruling 2026-08-02. That is what makes §4.4's
+--- 4b variant — tier 1-3 species at tier-4 money — an event worth reaching rather than a
+--- rearrangement of something already on the board.
+---
+--- `tierIndex` is the RUNG the farm has reached, and the species band is read straight off it:
+--- the two ladders are deliberately the same ladder (§4.1).
+function Offers.getForestrySpeciesForTier(species, tierIndex)
+	local result = {}
+
+	for _, entry in pairs(species or {}) do
+		if entry.tier == tierIndex then
+			table.insert(result, entry)
+		end
+	end
+
+	-- STABLE ORDER. `pairs` over a hash is arbitrary, so an unsorted list would make the
+	-- weighted roll below depend on table layout rather than on the weights.
+	table.sort(result, function(a, b) return a.name < b.name end)
+
+	return result
+end
+
+--- Share of tier-4 offers that are 4a — the tier-4 species themselves. The rest are 4b.
+---
+--- FORESTRY.md §4.4, copying the structure livestock already uses for its own tier 4: ONE
+--- reputation rung with the variant rolled per offer, *"a choice the player may decline, not a
+--- rank they have to reach."* The twist is that forestry's 4b is SHORTER rather than harder.
+Offers.FORESTRY_TIER4A_SHARE = 0.60
+
+--- How 4b weights the lower bands: 1 : 2 : 3, per tier and then uniform within it.
+---
+--- So oak takes 1/6 of 4b offers on its own, the three tier-2 species share 2/6, and the two
+--- tier-3 species share 3/6. A decade-long Manchurian pine ticking away while eight oaks are
+--- turned over every two years at the same money — two rhythms on one board, and neither is
+--- reachable below tier 4.
+Offers.FORESTRY_TIER4B_WEIGHTS = { 1, 2, 3 }
+
+--- Roll a species for a tier-4 offer. `variant` forces "4a" or "4b"; otherwise it is rolled.
+---
+--- Returns the species AND the variant actually used, so the caller can enforce §6's rule that
+--- a farm may hold one 4a and one 4b at once but never two of the same.
+function Offers.rollForestryTier4(species, variant)
+	variant = variant or (math.random() < Offers.FORESTRY_TIER4A_SHARE and "4a" or "4b")
+
+	if variant == "4a" then
+		local pool = Offers.getForestrySpeciesForTier(species, 4)
+		if #pool == 0 then
+			return nil, variant
+		end
+
+		return pool[math.random(1, #pool)], variant
+	end
+
+	-- 4b: pick the BAND first by weight, then uniformly within it. Weighting the species
+	-- directly would let a band with more species crowd out one with fewer, which is the
+	-- opposite of what 1:2:3 says — tier 3 is meant to dominate 4b despite having two species
+	-- against tier 2's three.
+	local bands, total = {}, 0
+
+	for tierIndex, weight in ipairs(Offers.FORESTRY_TIER4B_WEIGHTS) do
+		local pool = Offers.getForestrySpeciesForTier(species, tierIndex)
+
+		if #pool > 0 then
+			total = total + weight
+			table.insert(bands, { pool = pool, weight = weight })
+		end
+	end
+
+	if total == 0 then
+		return nil, variant
+	end
+
+	local roll = math.random() * total
+
+	for _, band in ipairs(bands) do
+		roll = roll - band.weight
+
+		if roll <= 0 then
+			return band.pool[math.random(1, #band.pool)], variant
+		end
+	end
+
+	-- Floating point can leave `roll` a hair above zero on the last band. Falling off the loop
+	-- would return nil and silently drop the offer.
+	local last = bands[#bands]
+
+	return last.pool[math.random(1, #last.pool)], variant
+end
+
+--- How many forestry offers a farm at this rung sees at once.
+---
+--- OFFERS SHOWN, not contracts signable — the cap on holdings is §6's 1 / 1 / 1 / 2, checked at
+--- signing. Tier 1 is oak alone, so a second offer would differ only in client and money roll;
+--- tiers 2 and 3 have three species and two, so two offers make the species a choice rather
+--- than a dice roll. User ruling 2026-08-02.
+function Offers.getForestryOfferCap(tierIndex)
+	return (tierIndex or 1) <= 1 and 1 or 2
+end
+
+--- THE CHIP PRICE A CONTRACT IS DERIVED AND SIGNED AT — season-blind, difficulty-aware.
+---
+--- ⚠ **DELIBERATELY NOT `getEffectiveFillTypePrice`, AND NOT THE `getSellableFillTypes` RATE.**
+--- User ruling 2026-08-02, and it is the one place forestry departs from how crop contracts are
+--- priced.
+---
+--- Woodchips carry the largest seasonal swing of any fill type in the game — 0.53 in the trough
+--- to 1.69 at the peak (`maps_fillTypes.xml:667-681`), a factor of 3.2. Money-first DIVIDES by
+--- this price, so pricing off the live effective rate would make the WORKLOAD depend on the
+--- month the player happened to sign in: a tier-1 oak contract is 1.6 trees signed in period 11
+--- and 5.2 trees signed in period 5, for identical money, locked in for up to eleven years.
+---
+--- **The base price is provably fair value, not a preference.** The twelve seasonal factors
+--- average 0.9983, so `pricePerLiter` IS the annual mean. Deriving there makes the swing a pure
+--- symmetric hedge around the contracted rate — which is the entire reason §2 chose chips over
+--- logs, since WOOD has no seasonal factors at all.
+---
+--- What IS applied: `EconomyManager.getPriceMultiplier()` (`economy/EconomyManager.lua:434`,
+--- `PRICE_MULTIPLIER = {3, 1.8, 1}`), so difficulty scales the workload exactly as it does for
+--- every other contract type. And each station's own `priceScale`, since
+--- `originalFillTypePrices` is seeded as `fillType.pricePerLiter * priceScale`
+--- (`objects/SellingStation.lua:82, :134`).
+---
+--- What is NOT: the seasonal factor, the random delta, and the station's transient great-demand
+--- `priceMultipliers`. `originalFillTypePrices` rather than `fillTypePrices` for the same
+--- reason — the latter sags under the price-drop mechanic and recovers over time
+--- (`SellingStation.lua:269`), so it would let a player who had just dumped a load sign a
+--- smaller contract.
+---
+--- Returns nil when no station on the map buys chips, and the caller then generates no offer. A
+--- map with no chip buyer simply has no forestry line, which is the same degradation every
+--- other contract type already has.
+function Offers:getChipMarket()
+	local economyManager = g_currentMission.economyManager
+	if economyManager == nil or economyManager.sellingStations == nil then
+		return nil
+	end
+
+	if FillType == nil or FillType.WOODCHIPS == nil then
+		return nil
+	end
+
+	local trainOnly = self:getTrainOnlyStations()
+	local ownedProduction = self:getOwnedProductionStations()
+	local best = nil
+
+	for _, entry in ipairs(economyManager.sellingStations) do
+		local station = entry.station
+
+		if station ~= nil and station.acceptedFillTypes ~= nil
+			and station.acceptedFillTypes[FillType.WOODCHIPS]
+			and not trainOnly[station] and not ownedProduction[station] then
+
+			-- Giants' own guard when saving station stats: a zero original price means the
+			-- station lists the type but does not really trade it.
+			local base = station.originalFillTypePrices ~= nil
+				and station.originalFillTypePrices[FillType.WOODCHIPS] or 0
+
+			if base > 0 and (best == nil or base > best.baseRate) then
+				best = { baseRate = base, stationName = station:getName() }
+			end
+		end
+	end
+
+	if best == nil then
+		return nil
+	end
+
+	local difficulty = EconomyManager ~= nil and EconomyManager.getPriceMultiplier ~= nil
+		and EconomyManager.getPriceMultiplier() or 1
+
+	return {
+		fillTypeIndex = FillType.WOODCHIPS,
+		marketRate = best.baseRate * difficulty,
+		stationName = best.stationName,
+	}
 end
 
 --- The REPRESENTATIVE price per litre of a posted forestry contract.
@@ -1572,22 +1859,23 @@ end
 --- derived at the SAME rate the contract signs at. Deriving at one price and signing at another
 --- is a silent overpayment that only shows up by adding a year up.
 
---- A forestry offer. Money first, litres derived, terms posted.
+--- A forestry offer: one species, one quota, one deadline. Money first, litres derived,
+--- pro-rated by term, terms posted.
 ---
---- ⚠ **THE QUOTA IS DERIVED AT THE POSTED RATE, NOT THE MARKET RATE, AND THE OTHER WAY ROUND IS
---- A REAL BUG WAITING TO HAPPEN.** Money-first means revenue must come out at `annualValue`:
+--- ⚠ **THE QUOTA IS DERIVED AT THE RATE THE CONTRACT WILL SIGN AT, AND THE OTHER WAY ROUND IS A
+--- REAL BUG WAITING TO HAPPEN.** Money-first means the revenue must come out at the rung:
 ---
----     quota = annualValue / postedRate   ->  quota * postedRate = annualValue          ✅
----     quota = annualValue / marketRate   ->  quota * postedRate = annualValue * mult   ❌
+---     quota = value / signedRate   ->  quota * signedRate = value            ✅
+---     quota = value / someOtherRate ->  quota * signedRate = value * ratio   ❌
 ---
---- The second silently pays a tier-3 contract 30% more than its rung, which is precisely the
---- fault the shared ladder exists to prevent, and it would not show up anywhere except by adding
---- the year's income up. **So the premium buys LESS WORK for the same money, never more money.**
---- A tier-3 contract at 1.30 asks for 23% fewer litres than a tier-1 contract of the same rung.
+--- The second silently pays a contract more than its rung, which is precisely the fault the
+--- shared ladder exists to prevent, and it would not show up anywhere except by adding the
+--- year's income up — the mistake "add up the totals" has now caught five times here.
 ---
---- Nothing calls this yet — the board is wired up in phase 3. See FORESTRY.md §1.6.
-function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reputation, forcedClient)
-	if candidate == nil or tier == nil or forestryTier == nil then
+--- `species` comes from `getForestrySpecies`, `tier` from `Offers.TIERS`, and `market` from
+--- `getChipMarket`. Nothing calls this yet: the board is wired up in step 5.
+function Offers:createForestryOffer(farmId, species, tier, market, reputation, forcedClient)
+	if species == nil or tier == nil or market == nil then
 		return nil
 	end
 
@@ -1602,21 +1890,23 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 	-- product is a different number — see `ContractStore:signContract`. `quotaTotal` is the
 	-- authoritative figure and everything else is derived from it.
 	--
-	-- Rolled in whole years HERE ONLY because the species tiers that supply a real fractional
-	-- term are phase-3 step 3. This is the transitional source, not the design.
-	local termYears = math.random(tier.years[1], tier.years[2])
-	local termDays = math.max(1, math.floor(termYears * ContractStore.getDaysPerYear() + 0.5))
+	-- Both DERIVED from the species, never rolled: term is `growth * 1.1` and the species'
+	-- growth is read live from `TreePlantManager`. A map that changes a growth time changes
+	-- these with no code change, which is the whole point of §3.
+	local termDays = species.termDays
+	local termYears = species.termYears
 	local years = math.max(1, math.ceil(termYears))
 
-	-- Wood is not a production output, so it is never "processed" and the client pool is the
-	-- ordinary one. Resolved BEFORE the money, because `rollAnnualValue` reads `client.size` and
-	-- resolving it afterwards is exactly how livestock lost its loyalty growth (IMPLEMENTATION.md,
+	-- Chips are not a production output, so the client pool is the ordinary one. Resolved
+	-- BEFORE the money, because `rollAnnualValue` reads `client.size` and resolving it
+	-- afterwards is exactly how livestock lost its loyalty growth (IMPLEMENTATION.md,
 	-- 2026-08-01).
 	local client = forcedClient or self:getClient(farmId, false)
 
-	-- FLAT. The posted rate is the market rate — there is no premium and no multiplier. See the
-	-- reversal note above `createForestryOffer`'s section, and `Settlement:onDelivery`.
-	local rate = candidate.marketRate
+	-- FLAT, AND SEASON-BLIND. No premium and no multiplier — see `getChipMarket` for why this
+	-- is the base price rather than the live one, and `Settlement:onDelivery` for why there is
+	-- no multiplier left to apply.
+	local rate = market.marketRate
 	if type(rate) ~= "number" or rate <= 0 then
 		return nil
 	end
@@ -1636,8 +1926,8 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		return nil
 	end
 
-	-- DISPLAY ONLY, and it is the derived figure rather than the source. See the note above the
-	-- term calculation: reconstructing `quotaTotal` from this would round twice.
+	-- DISPLAY ONLY, and derived rather than the source. See the note above the term calculation:
+	-- reconstructing `quotaTotal` from this would round twice.
 	local quotaPerYear = quotaTotal / termYears
 
 	local offer = {
@@ -1645,9 +1935,9 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		farmId = farmId,
 		kind = Offers.KIND_SUPPLY,
 		unit = ContractStore.UNIT_LITRES,
-		fillTypeIndex = candidate.fillTypeIndex,
-		marketRate = candidate.marketRate,
-		suggestedStation = candidate.stationName,
+		fillTypeIndex = market.fillTypeIndex,
+		marketRate = market.marketRate,
+		suggestedStation = market.stationName,
 		quotaPerYear = quotaPerYear,
 		years = years,
 		client = client,
@@ -1659,35 +1949,60 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		termDays = termDays,
 		termYears = termYears,
 
+		-- WHAT IS LEFT OF THE TERM ONCE THE TREES ARE MATURE, in days. The deadline crunch, and
+		-- the number the board should put in front of the player — 2.4 months at tier 1 and 12
+		-- at tier 4. Derived from the species, not stored on the contract.
+		windowDays = species.windowDays,
+
 		-- POSTED. The rate is settled here and there is no negotiation profile, which is the
 		-- seam the board reads — see `isPosted`.
 		--
-		-- ⛔ NO `rateMultiplier`. Its absence is what makes `Settlement:onDelivery` treat this as
-		-- an ordinary hedged litre contract, and it is deliberate — see the reversal notes there
-		-- and at `FORESTRY_TIERS`. Adding one back does not error; it silently converts the
-		-- contract from a hedge into a share of the market.
+		-- ⛔ NO `rateMultiplier`. Its absence is what makes `Settlement:onDelivery` treat this
+		-- as an ordinary hedged litre contract, and it is deliberate — see the reversal notes
+		-- there and at `FORESTRY_VOLUMES`' section. Adding one back does not error; it silently
+		-- converts the contract from a hedge into a share of the market.
 		rate = rate,
-		contractType = forestryTier.contractType,
+		contractType = Offers.FORESTRY,
+
+		-- **THE SPECIES, AND IT IS THE ONLY THING THAT MAKES ONE FORESTRY CONTRACT DIFFERENT
+		-- FROM ANOTHER.** Chips are species-blind at the till, so this is checked against the
+		-- PLANTING, never the delivery (§5.2).
+		--
+		-- ⚠ BY NAME, NEVER BY INDEX. Split types are registered at runtime
+		-- (`misc/SplitShapeManager.lua:12-53`) and a mod adding species renumbers them, so a
+		-- stored index would silently retarget the contract at a different tree. The name is
+		-- upper-case and identical across the tree-type registry, the split-type registry and
+		-- the savegame's own `treePlant.xml` (§5.1) — one string identifies a species
+		-- everywhere.
+		speciesName = species.name,
+		speciesTitle = species.title,
+		speciesTier = species.tier,
+
+		-- HOW MANY TREES THIS QUOTA IMPLIES, rounded up. What the planting ledger enforces.
+		--
+		-- Stored rather than recomputed because the chip price it was derived at will have
+		-- moved by the time anyone asks — re-deriving would state a different number of trees
+		-- than the one the player agreed to. Same reason `feedName` is stored.
+		plantingFloor = math.ceil(quotaTotal / species.chipsPerTree),
 
 		-- WHAT THIS CONTRACT IS MEANT TO BE WORTH IN A YEAR, kept so the invariant
 		-- `quotaTotal * rate == annualValue * termYears` is CHECKABLE rather than merely true.
 		--
 		-- Added because the guard written for that invariant was worthless without it: it
 		-- compared revenue against the rung's full 0.75-1.25 variance band, and a 30% pricing
-		-- error fits comfortably inside a 50% band. Deriving the quota at the market rate
-		-- instead of the posted rate passed every check. Found by breaking it on purpose,
-		-- 2026-08-01 — the second worthless guard caught that day.
+		-- error fits comfortably inside a 50% band. Found by breaking it on purpose, 2026-08-01
+		-- — the second worthless guard caught that day.
 		annualValue = annualValue,
 
-		-- **THE BOARD MUST BRANCH ON THIS, NOT ON A LIST OF TYPES.** ContractBoardFrame currently
-		-- decides how to sign by testing entry kinds and falling through to NegotiationDialog,
-		-- so a posted offer carrying KIND_SUPPLY would open a haggle for a price that was never
+		-- **THE BOARD MUST BRANCH ON THIS, NOT ON A LIST OF TYPES.** ContractBoardFrame decides
+		-- how to sign by testing entry kinds and falling through to NegotiationDialog, so a
+		-- posted offer carrying KIND_SUPPLY would open a haggle for a price that was never
 		-- negotiable. A flag says what the offer IS; a type list has to be kept in step with
 		-- every type ever added, which is the shape of the five-list bug.
 		isPosted = true,
 
-		-- Forestry is judged once, on the whole term. See ContractStore:signContract for why
-		-- an annual quota cannot work for a product that takes years to grow.
+		-- Forestry is judged once, on the whole term. See ContractStore:signContract for why an
+		-- annual quota cannot work for a product that takes years to grow.
 		isTermQuota = true,
 
 		-- What the player is actually committing to, and the number the board should lead with.
@@ -1699,10 +2014,10 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 		-- number once the term is fractional. See `ContractStore:signContract`.
 		quotaTotal = quotaTotal,
 
-		-- No coverage hint on any forestry tier. FORESTRY.md §1.5 ruling 5: there is no honest
-		-- denominator, because any land grows trees. Tier 3's plant-by-date line is the nudge,
-		-- and it is a better one. `getImpliedWorkload` already returns nil for WOOD — it is
-		-- neither a fruit type nor an animal output — so this is belt and braces.
+		-- No coverage hint on any forestry contract. FORESTRY.md §8, ruled 2026-08-01: there is
+		-- no honest denominator, because any land grows trees. The PLANTING FLOOR is the honest
+		-- number instead, and it is a better one — it states the commitment rather than
+		-- assessing the player.
 		coverageHint = nil,
 
 		expiryDay = g_currentMission.environment.currentMonotonicDay + Offers.OFFER_LIFETIME_DAYS,
@@ -1744,7 +2059,7 @@ function Offers:acceptForestryOffer(offer)
 
 		-- ⛔ NO `rateMultiplier` IS PASSED, AND THAT IS THE POINT. Its presence is the ONLY
 		-- thing `Settlement:onDelivery` would branch on to leave the flat hedge. Reversed
-		-- 2026-08-02 — see FORESTRY_TIERS.
+		-- 2026-08-02 — see the reversal note at `Settlement:onDelivery`.
 
 		-- Posted terms carry no completion bonus. Livestock's exists because its bottom rung
 		-- sits BELOW market at 0.90 and would otherwise be strictly bad to sign (see
@@ -1776,6 +2091,16 @@ function Offers:acceptForestryOffer(offer)
 		-- `test/field_lists.py` under FORESTRY_FIELDS.
 		termDays = offer.termDays,
 		quotaTotal = offer.quotaTotal,
+
+		-- **THE SPECIES AND THE TREE COUNT.** `speciesName` is the only thing that makes one
+		-- forestry contract different from another and is what the planting ledger checks
+		-- against; without it the contract names no tree and the floor has nothing to count.
+		-- `plantingFloor` cannot be recomputed later — the chip price has moved by then, so a
+		-- re-derivation would state a different number of trees than the one that was agreed.
+		--
+		-- BY NAME, NEVER BY INDEX. See the offer table.
+		speciesName = offer.speciesName,
+		plantingFloor = offer.plantingFloor,
 	})
 
 	self:removeOffer(offer.id)
