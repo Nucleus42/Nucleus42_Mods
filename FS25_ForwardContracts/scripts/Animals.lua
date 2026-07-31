@@ -2034,9 +2034,133 @@ function Animals.isHorseSubType(subType)
 end
 
 --- A subtype's display name, from its own fill type — already localised by the base game.
+--- What makes two subtypes THE SAME PRODUCT as far as a contract is concerned.
+---
+--- **THE BOARD OFFERED A "DUN STALLION" AND A "SEAL BROWN STALLION" SIDE BY SIDE** — two
+--- contracts that were identical in every number, wearing different names (§1.3, seen in play).
+--- RL ships eight coat colours per horse gender and every one shares the same weights, the
+--- same price curve and the same everything else; only `breed` differs, and `breed` is paint.
+---
+--- DERIVED, NOT A LIST OF HORSES. The signature is built from what actually decides money and
+--- behaviour, so a mod adding a ninth coat is folded in automatically, and any mod adding a
+--- genuinely different breed stays separate on its own merits. Run across the whole of RL this
+--- finds EXACTLY TWO groups — the eight mares and the eight stallions — and leaves every other
+--- subtype alone, which is the harness's assertion.
+function Animals.getEquivalenceKey(subType)
+	if type(subType) ~= "table" then
+		return nil
+	end
+
+	local parts = {
+		tostring(subType.typeIndex),
+		tostring(subType.gender),
+		tostring(subType.minWeight),
+		tostring(subType.targetWeight),
+		tostring(subType.maxWeight),
+		tostring(subType.reproductionMinAgeMonth),
+		tostring(select(1, Animals.getProductOutput(subType))),
+	}
+
+	-- The price curve is the thing a contract is anchored on, so two subtypes that disagree
+	-- about what they are worth at any age are NOT interchangeable however alike they look.
+	local curve = subType.sellPrice
+
+	for _, age in ipairs({ 0, 6, 12, 24, 48, 84 }) do
+		local value = "?"
+
+		if curve ~= nil and curve.get ~= nil then
+			local ok, price = pcall(curve.get, curve, age)
+			if ok and type(price) == "number" then
+				value = string.format("%.4f", price)
+			end
+		end
+
+		table.insert(parts, value)
+	end
+
+	return table.concat(parts, "|")
+end
+
+--- Every subtype name a contract naming this one should also accept. Cached: it walks the
+--- whole roster and nothing about it changes during a session.
+function Animals.getInterchangeableNames(subType)
+	if type(subType) ~= "table" or subType.name == nil then
+		return {}
+	end
+
+	Animals.equivalenceCache = Animals.equivalenceCache or {}
+
+	local cached = Animals.equivalenceCache[subType.name]
+	if cached ~= nil then
+		return cached
+	end
+
+	local key = Animals.getEquivalenceKey(subType)
+	local names = { subType.name }
+
+	local system = g_currentMission ~= nil and g_currentMission.animalSystem or nil
+
+	if key ~= nil and system ~= nil and system.subTypes ~= nil then
+		names = {}
+
+		for _, candidate in ipairs(system.subTypes) do
+			if Animals.getEquivalenceKey(candidate) == key then
+				table.insert(names, candidate.name)
+			end
+		end
+	end
+
+	Animals.equivalenceCache[subType.name] = names
+
+	return names
+end
+
+--- True when a contract naming `specName` should accept an animal of `animalName`.
+---
+--- Exact match first, because that is the answer for every subtype in the game except the
+--- horses, and it must stay cheap.
+function Animals.isInterchangeable(animalName, specName)
+	if animalName == specName then
+		return true
+	end
+
+	if animalName == nil or specName == nil then
+		return false
+	end
+
+	local subType = Animals.getSubTypeByName(specName)
+	if subType == nil then
+		return false
+	end
+
+	for _, name in ipairs(Animals.getInterchangeableNames(subType)) do
+		if name == animalName then
+			return true
+		end
+	end
+
+	return false
+end
+
+--- What to CALL a subtype on the board.
+---
+--- A subtype with interchangeable siblings is named by its SPECIES, because naming it by coat
+--- would promise a distinction the contract does not make and cannot enforce — "Dun Stallion"
+--- reads as a requirement when any stallion will do.
+---
+--- The species word is RL's own: the subtype name with its `breed` stripped off, so
+--- `STALLION_SEAL_BROWN` (breed `SEAL_BROWN`) becomes "Stallion". Nothing is invented and no
+--- new vocabulary is introduced.
 function Animals.getSubTypeBreedName(subType)
 	if type(subType) ~= "table" then
 		return "?"
+	end
+
+	if #Animals.getInterchangeableNames(subType) > 1 then
+		local species = Animals.getSpeciesWord(subType)
+		if species ~= nil then
+			return species
+		end
 	end
 
 	if subType.fillTypeIndex ~= nil then
@@ -2047,6 +2171,28 @@ function Animals.getSubTypeBreedName(subType)
 	end
 
 	return subType.name or "?"
+end
+
+--- `STALLION_SEAL_BROWN` + breed `SEAL_BROWN` -> "Stallion". Nil when the name carries no
+--- breed suffix to remove, in which case the caller keeps the ordinary title.
+function Animals.getSpeciesWord(subType)
+	local name = subType.name
+	local breed = subType.breed
+
+	if type(name) ~= "string" or type(breed) ~= "string" or breed == "" then
+		return nil
+	end
+
+	local stripped = name:gsub("_" .. breed .. "$", "")
+
+	if stripped == name or stripped == "" then
+		return nil
+	end
+
+	-- HORSE -> Horse, and any multi-word species keeps its underscores as spaces.
+	stripped = stripped:gsub("_", " "):lower()
+
+	return (stripped:gsub("^%l", string.upper))
 end
 
 --- A breed's display name, e.g. "Angus".
@@ -2641,7 +2787,15 @@ function Animals:meetsSpec(animal, spec)
 	-- Breed is checked first: it is the flattest, cheapest test and the one the player can
 	-- see at a glance. A top-tier contract names a line ("Angus at 24-28 months, every
 	-- trait Very high"), so an animal of the wrong breed is simply not the product.
-	if spec.subTypeName ~= nil and animal.subType ~= spec.subTypeName then
+	-- INTERCHANGEABLE SUBTYPES PASS, and this half is not optional. Renaming a horse contract
+	-- to "Stallion" while still pinning STALLION_DUN would be a TRAP: the board would promise
+	-- any stallion and settlement would refuse seven eighths of them as `wrongBreed` — and
+	-- since 2026-08-01 it would say so in a notification, so the player would watch the mod
+	-- reject animals it had just told them to bring.
+	--
+	-- Everywhere except horses this is an exact-name comparison and nothing changes; the
+	-- harness asserts that the only groups in the whole roster are the mares and the stallions.
+	if spec.subTypeName ~= nil and not Animals.isInterchangeable(animal.subType, spec.subTypeName) then
 		return false, "wrongBreed", animal.subType
 	end
 
