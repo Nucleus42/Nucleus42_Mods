@@ -121,6 +121,32 @@ Requires Realistic Livestock (Ritter version).]]></en>
 			<en>Contract shortfall</en>
 		</text>
 
+		<!-- REJECTION REASONS, shown after an animal sale. See Animals.REJECTION_LABELS.
+		     State the fact, never the target: "underweight", not "451 kg against 486". -->
+		<text name="fc_reject_wrongBreed"><en>wrong breed</en></text>
+		<text name="fc_reject_wrongGender"><en>wrong gender</en></text>
+		<text name="fc_reject_notCastrated"><en>not castrated</en></text>
+		<text name="fc_reject_castrated"><en>castrated</en></text>
+		<text name="fc_reject_pregnant"><en>pregnant</en></text>
+		<text name="fc_reject_lactating"><en>in milk</en></text>
+		<text name="fc_reject_tooYoung"><en>too young</en></text>
+		<text name="fc_reject_tooOld"><en>too old</en></text>
+		<text name="fc_reject_underweight"><en>underweight</en></text>
+		<text name="fc_reject_poorHealth"><en>poor health</en></text>
+		<text name="fc_reject_overallBand"><en>genetics below spec</en></text>
+		<text name="fc_reject_quality"><en>meat quality below spec</en></text>
+		<text name="fc_reject_productivity"><en>milk production below spec</en></text>
+		<text name="fc_reject_fertility"><en>fertility below spec</en></text>
+		<text name="fc_reject_metabolism"><en>metabolism below spec</en></text>
+		<text name="fc_reject_health"><en>health genetics below spec</en></text>
+
+		<text name="fc_sale_counted">
+			<en>%s: %d offered, %d counted</en>
+		</text>
+		<text name="fc_sale_rejected">
+			<en>%s: %d offered, %d counted — %s</en>
+		</text>
+
 		<!-- COVERAGE HINTS. A nudge, never a calculation.
 		     These strings must never contain a number, a ratio, a shortfall or a word of
 		     degree. "Considerably more land than you own" was drafted and rejected because

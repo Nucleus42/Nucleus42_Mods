@@ -192,6 +192,8 @@ function Settlement:settleAnimalsAgainst(contract, pool, sale, animals, provider
 		#pool, #eligible,
 		#summary > 0 and (", rejected " .. table.concat(summary, ", ")) or "")
 
+	self:notifySale(contract, #pool, #eligible, rejected)
+
 	local countedHead = math.min(#eligible, contract.remainingLitres or 0)
 	if countedHead <= 0 then
 		-- Nothing claimed, so every animal offered stays available to the next contract.
@@ -262,6 +264,58 @@ function Settlement:settleAnimalsAgainst(contract, pool, sale, animals, provider
 	provider:recordDelivery(contract, countedHead, countedMoney + adjustment)
 
 	return unclaimed
+end
+
+--- Tell the player what the contract just did with their animals, and why.
+---
+--- **THE REASONS WERE ALWAYS COMPUTED AND NEVER SHOWN.** Reported from play 2026-08-01: a
+--- tier-4 breeding contract counted 6 of 10 animals and the panel said nothing about the other
+--- four. They were underweight, it was in `log.txt`, and nowhere else. A 40% loss with no
+--- visible cause is not difficulty, it is a missing instrument.
+---
+--- States the count and the reasons, and NOTHING ELSE — no target weight, no shortfall, no
+--- advice. Same line as the coverage hints: what happened, never what to aim for.
+---
+--- SILENT WHEN THE POOL IS EMPTY. With multi-contract settlement a batch is offered to each
+--- live contract in turn and shrinks as it goes (HANDOFF §0.10), so a second contract routinely
+--- sees nothing at all. "0 offered, 0 counted" is noise about a contract that was never
+--- involved.
+function Settlement:notifySale(contract, offered, counted, rejected)
+	if offered <= 0 then
+		return
+	end
+
+	local name = "Livestock"
+
+	if contract.subTypeName ~= nil and Animals ~= nil
+		and Animals.getSubTypeBreedName ~= nil and Animals.getSubTypeByName ~= nil then
+		local subType = Animals.getSubTypeByName(contract.subTypeName)
+		name = subType ~= nil and Animals.getSubTypeBreedName(subType) or contract.subTypeName
+	end
+
+	local reasons = {}
+
+	for reason, count in pairs(rejected or {}) do
+		local label = Animals ~= nil and Animals.getRejectionLabel ~= nil
+			and Animals.getRejectionLabel(reason) or tostring(reason)
+
+		table.insert(reasons, count > 1 and string.format("%d %s", count, label) or label)
+	end
+
+	-- Stable ordering. `pairs` over a hash is arbitrary, so the same sale could otherwise
+	-- report its reasons in a different order each time and look like different information.
+	table.sort(reasons)
+
+	local text
+
+	if #reasons == 0 then
+		text = string.format(g_i18n:getText("fc_sale_counted"), name, offered, counted)
+	else
+		text = string.format(g_i18n:getText("fc_sale_rejected"), name, offered, counted,
+			table.concat(reasons, ", "))
+	end
+
+	g_currentMission:addIngameNotification(FSBaseMission.INGAME_NOTIFICATION_INFO, text)
 end
 
 --- Price per litre actually received, from the station's own books.

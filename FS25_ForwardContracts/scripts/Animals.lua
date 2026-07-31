@@ -2575,6 +2575,60 @@ end
 --- indefinitely) and it is also the failure the UI most needs to explain.
 ---
 --- Returns: eligible, failureReason, failureValue
+--- Every reason `meetsSpec` can refuse an animal for, in words a player can read.
+---
+--- **THE REASONS ARE INTERNAL IDENTIFIERS AND MUST NEVER REACH THE SCREEN RAW.** "wrongBreed
+--- x5" and "prodFert" are developer vocabulary; the notification says "wrong breed".
+---
+--- WHY THIS EXISTS AT ALL. Reported from play 2026-08-01: a tier-4 breeding contract counted
+--- 6 of 10 animals and the panel said nothing about the other four. The reasons were computed,
+--- logged, and never shown — so the only way to learn that they were underweight was to read
+--- `log.txt`. A player without the log sees a 40% loss and no cause.
+---
+--- **NO NUMBERS HERE, and that is the line.** "Underweight" is the fact. "451 kg against 486"
+--- is a calculator, and the same ruling that governs the coverage hints applies: state what
+--- happened, never what to aim for. The user's own words on finding the cause:
+--- *"If I had taken the time to look properly I would have figured that out before selling."*
+---
+--- The last five entries are GENETIC TRAIT NAMES, because the BREEDING and legacy-floor paths
+--- return the trait itself as the reason. They use RL's own vocabulary — RL's info box calls
+--- `quality` "Meat" — so the notification and the game agree on what the animal was short of.
+Animals.REJECTION_LABELS = {
+	wrongBreed = "fc_reject_wrongBreed",
+	wrongGender = "fc_reject_wrongGender",
+	notCastrated = "fc_reject_notCastrated",
+	castrated = "fc_reject_castrated",
+	pregnant = "fc_reject_pregnant",
+	lactating = "fc_reject_lactating",
+	tooYoung = "fc_reject_tooYoung",
+	tooOld = "fc_reject_tooOld",
+	underweight = "fc_reject_underweight",
+	poorHealth = "fc_reject_poorHealth",
+	overallBand = "fc_reject_overallBand",
+
+	quality = "fc_reject_quality",
+	productivity = "fc_reject_productivity",
+	fertility = "fc_reject_fertility",
+	metabolism = "fc_reject_metabolism",
+	health = "fc_reject_health",
+}
+
+--- Readable text for a rejection reason, falling back to the raw reason rather than to
+--- nothing — an unlabelled reason should look wrong on screen, not vanish silently.
+function Animals.getRejectionLabel(reason)
+	if reason == nil then
+		return nil
+	end
+
+	local key = Animals.REJECTION_LABELS[reason]
+
+	if key == nil then
+		return tostring(reason)
+	end
+
+	return g_i18n ~= nil and g_i18n:getText(key) or key
+end
+
 function Animals:meetsSpec(animal, spec)
 	if animal == nil then
 		return false, nil, nil
