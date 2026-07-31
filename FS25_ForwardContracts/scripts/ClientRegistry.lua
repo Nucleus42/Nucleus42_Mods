@@ -23,7 +23,28 @@ ClientRegistry.MAX_CLIENTS = 12
 -- Clients grow as you do. Size multiplies the quota they ask for, so a long relationship
 -- means bigger commitments — the narrative of a business expanding alongside your farm.
 ClientRegistry.SIZE_GROWTH_PER_CONTRACT = 0.08
-ClientRegistry.MAX_SIZE = 1.8
+
+--- ⚠ CUT FROM 1.8 ON 2026-08-01. DO NOT RESTORE IT WITHOUT ADDING UP THE LADDER FIRST.
+---
+--- 1.8 was set when quotas were LITRES and the money floated out of them. Once the money
+--- ladder became the thing being decided (2026-07-31), this started multiplying the very
+--- number the ladder exists to fix, and nobody added it up:
+---
+--- | | designed | actual, before this cut |
+--- | --- | --- | --- |
+--- | tier 1 -> tier 4 | 2.83x | — |
+--- | worst tier-1 crop to best tier-4 crop | — | **8.50x** |
+--- | tier-4 crop, maxed client, lucky variance | £85,000 | **£191,250/yr** |
+---
+--- That is the "every part defensible, the sum absurd" failure the mod has hit before, in its
+--- exact form — and it made a crop slot worth up to 2.25x a livestock slot out of the same
+--- budget, which is the fault the shared ladder was built to remove.
+---
+--- **1.25 IS THE USER'S RULING**, taken with the table above in front of him: *"I want the
+--- narrative and the numbers should inflate for repeat contracts... but not stupid levels.
+--- It's more of a 'loyalty bonus'."* Ten completed contracts still take a buyer to their
+--- ceiling; the ceiling is simply +25% rather than +80%.
+ClientRegistry.MAX_SIZE = 1.25
 
 local PLACES = {
 	"Ashcombe", "Bramfield", "Kirkby", "Halstead", "Denby", "Ravensworth",

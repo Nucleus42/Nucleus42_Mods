@@ -1990,8 +1990,31 @@ function Offers:createAnimalOffer(farmId, reputation, overrides)
 	-- 2026-07-30). They contradicted §4.1, and §4.2's endorsed figures only reproduce under pure
 	-- money: the user's own two calibration points, 14 cattle and 37 pigs, are in a ratio of 2.64
 	-- against the two anchors' 2.67. Applying the blend gives 5.8 cattle at tier 1 instead of 14.
+	-- RESOLVED BEFORE THE HEADCOUNT, and the order is load-bearing: `client.size` scales the
+	-- money target, so working it out afterwards would silently drop the loyalty growth.
+	local client
+
+	if overrides.clientId ~= nil and self.clients ~= nil
+		and self.clients.getClientById ~= nil then
+		client = self.clients:getClientById(overrides.clientId)
+	end
+
+	if client == nil then
+		client = self:getClient(farmId, true)
+	end
+
 	local money = Offers.getAnimalMoneyLadder(subType, kind)
-	local targetValue = money[tierIndex] or money[1]
+
+	-- THE LOYALTY BONUS, and livestock went without it until 2026-08-01. `client.size` was
+	-- applied only in `rollAnnualValue`, which the crop and product path uses and this one does
+	-- not — so a livestock contract was the same size whether the buyer had known you for ten
+	-- years or ten minutes. Caught by the user's own renewal test: a renewal from a client with
+	-- TWO completed contracts came back SMALLER than the contract it replaced.
+	--
+	-- It matters more here than for crops, because a livestock contract is POSTED. Crops carry
+	-- loyalty twice — through size and through the negotiation premium relationship buys — and
+	-- livestock is fixed-terms with no haggling, so size is its ONLY loyalty channel.
+	local targetValue = (money[tierIndex] or money[1]) * ((client ~= nil and client.size) or 1)
 
 	local head = math.floor(targetValue / math.max(perHeadPrice, 1) + 0.5)
 
@@ -2024,17 +2047,6 @@ function Offers:createAnimalOffer(farmId, reputation, overrides)
 	-- Horses remain gated to tier 3 and above (§1.7), which the user kept — they mature slowly
 	-- and cost a great deal, and that is reason enough on its own.
 	head = math.max(1, head)
-
-	local client
-
-	if overrides.clientId ~= nil and self.clients ~= nil
-		and self.clients.getClientById ~= nil then
-		client = self.clients:getClientById(overrides.clientId)
-	end
-
-	if client == nil then
-		client = self:getClient(farmId, true)
-	end
 
 	-- The flat agreed price per head. Settlement pays the difference between this and what the
 	-- dealer actually gave (§0.5), so it is the whole of what a qualifying animal earns. The
