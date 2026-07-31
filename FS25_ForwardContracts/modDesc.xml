@@ -92,6 +92,17 @@ Requires Realistic Livestock (Ritter version).]]></en>
 			<en>Livestock — produce</en>
 		</text>
 
+		<!-- FORESTRY. The row leads with the SPECIES, because that is the only thing that
+		     distinguishes one forestry contract from another and it is what the planting
+		     floor is checked against. "Forestry" alone would make all four tiers look
+		     identical, which is exactly what the species ladder replaced. -->
+		<text name="fc_entry_forestry">
+			<en>forestry</en>
+		</text>
+		<text name="fc_entry_forestryActive">
+			<en>forestry · active</en>
+		</text>
+
 		<text name="fc_deadline_hours">
 			<en>%dh left</en>
 		</text>

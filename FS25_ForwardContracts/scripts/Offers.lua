@@ -821,7 +821,7 @@ function Offers:refresh(farmId)
 	-- cattle, which is the whole fault being fixed. An empty crop pool must mean no crop offers.
 	candidates = cropCandidates
 
-	local supplyCount, spotCount, animalCount, productCount = self:countOffers(farmId)
+	local supplyCount, spotCount, animalCount, productCount, forestryCount = self:countOffers(farmId)
 
 	-- THE BUDGET BOUNDS EVERY TYPE, and each type is capped against the WHOLE remaining
 	-- allowance rather than a share of it. So a farm with two slots left sees both crop and
@@ -880,10 +880,25 @@ function Offers:refresh(farmId)
 		end
 		productCount = productCount + 1
 	end
+
+	-- FORESTRY, AND IT IS BOUNDED BY NOTHING ABOVE. It sits outside `CONTRACT_BUDGET` entirely
+	-- (FORESTRY.md §6) and carries its own 1/1/1/2 cap, so `remaining` is deliberately not
+	-- passed in — a farm with five crop contracts can still take a forestry one, which is the
+	-- whole ruling.
+	--
+	-- The species tier is read off the SAME rung index as the money, because the two ladders are
+	-- deliberately the same ladder (§4.1).
+	local _, tierIndex = self:getAnimalTier(reputation)
+
+	-- `getAnimalTier` rolls 4b for LIVESTOCK and can return index 5, which is not a forestry
+	-- band. Forestry rolls its own 4a/4b per offer, so clamp to the four species tiers.
+	tierIndex = math.min(tierIndex, 4)
+
+	self:refreshForestryOffers(farmId, forestryCount, tier, tierIndex, reputation)
 end
 
 function Offers:countOffers(farmId)
-	local supplyCount, spotCount, animalCount, productCount = 0, 0, 0, 0
+	local supplyCount, spotCount, animalCount, productCount, forestryCount = 0, 0, 0, 0, 0
 
 	for _, offer in ipairs(self.offers) do
 		if offer.farmId == farmId then
@@ -891,6 +906,12 @@ function Offers:countOffers(farmId)
 				spotCount = spotCount + 1
 			elseif offer.kind == Offers.KIND_ANIMAL then
 				animalCount = animalCount + 1
+			elseif offer.speciesName ~= nil then
+				-- FORESTRY. It shares KIND_SUPPLY and UNIT_LITRES with a crop contract — only
+				-- the species tells them apart, which is the same reasoning `PRODUCT` uses
+				-- below. Counting it as a crop would let the crop cap suppress it, and worse,
+				-- would let it eat a crop slot on the board it does not pay for.
+				forestryCount = forestryCount + 1
 			elseif offer.contractType == Offers.KIND_ANIMAL_PRODUCT then
 				-- A PRODUCT offer shares the crop KIND and unit, so only `contractType` tells
 				-- them apart. Counting it as a crop would let the crop cap suppress it.
@@ -901,7 +922,7 @@ function Offers:countOffers(farmId)
 		end
 	end
 
-	return supplyCount, spotCount, animalCount, productCount
+	return supplyCount, spotCount, animalCount, productCount, forestryCount
 end
 
 --- Ceiling on PRODUCT offers shown at once. §6's "still needed" note: without a per-type cap on
@@ -2035,10 +2056,31 @@ end
 --- against the till like any other litre delivery. Only `contractType` and the posted rate make
 --- it forestry, and both already persist.
 function Offers:acceptForestryOffer(offer)
-	-- Same guard as every other accept path, and for the same reason: an offer outlives the
-	-- moment it was generated in. See acceptSupplyOffer.
-	if self:getRemainingBudget(offer.farmId, self:getReputation(offer.farmId)) <= 0 then
-		return nil, Offers.REFUSED_BUDGET
+	-- ⛔ **THE FORESTRY CAP, NOT `getRemainingBudget`.** Forestry sits outside the shared
+	-- contract budget entirely (FORESTRY.md §6), so checking the budget here would both refuse a
+	-- forestry contract to a farm that is merely busy AND let a farm with a free crop slot sign
+	-- a third forestry contract. Wrong in both directions at once.
+	--
+	-- Re-checked at signing for the same reason every other accept path re-checks: an offer
+	-- outlives the moment it was generated in, and the board it was generated against.
+	local _, tierIndex = self:getAnimalTier(self:getReputation(offer.farmId))
+	tierIndex = math.min(tierIndex, 4)
+
+	local remaining, taken = self:getRemainingForestrySlots(offer.farmId, tierIndex)
+
+	if remaining <= 0 then
+		return nil, Offers.REFUSED_FORESTRY_SLOTS
+	end
+
+	-- ONE 4a AND ONE 4b, NEVER TWO OF THE SAME (§4.4). Only reachable at tier 4, where the cap
+	-- is 2 — below that `remaining` has already refused a second contract.
+	local species = Offers.getForestrySpecies()
+	local entry = species[offer.speciesName]
+	local variant = tierIndex == 4 and entry ~= nil
+		and (entry.tier == 4 and "4a" or "4b") or nil
+
+	if variant ~= nil and taken[variant] then
+		return nil, Offers.REFUSED_FORESTRY_VARIANT
 	end
 
 	local contract = self.contractStore:signContract({
@@ -2106,6 +2148,161 @@ function Offers:acceptForestryOffer(offer)
 	self:removeOffer(offer.id)
 
 	return contract
+end
+
+--- Forestry contracts a farm may HOLD at once, by rung. FORESTRY.md §6.
+---
+--- ⛔ **THIS IS NOT PART OF `CONTRACT_BUDGET`, AND THAT IS THE RULING.** Forestry sits outside
+--- the shared budget entirely — see `ContractStore:getActiveContractCount` for the two arguments
+--- that put it there. One at tiers 1-3; two at tier 4, and only as one 4a plus one 4b.
+Offers.FORESTRY_SLOTS = { 1, 1, 1, 2 }
+
+--- Which tier-4 variant a signed forestry contract is: "4a", "4b", or nil below tier 4.
+---
+--- **DERIVED FROM THE SPECIES, NOT STORED.** A tier-4 contract naming a tier-4 species is 4a; one
+--- naming a tier 1-3 species is 4b. The two bands are disjoint by construction (§4.4), so the
+--- species alone decides it and there is no field to lose, to persist, or to fall out of step
+--- with the species it describes.
+---
+--- Returns nil when the species is unknown — a map or mod change can remove one — and the caller
+--- then treats the contract as occupying a slot without claiming a variant, which is the
+--- conservative reading.
+function Offers.getForestryVariant(contract, species, tierIndex)
+	if contract == nil or contract.speciesName == nil or tierIndex ~= 4 then
+		return nil
+	end
+
+	local entry = (species or {})[contract.speciesName]
+	if entry == nil then
+		return nil
+	end
+
+	return entry.tier == 4 and "4a" or "4b"
+end
+
+--- How many more forestry contracts this farm may sign, and which variants are still free.
+---
+--- Returns `remaining, takenVariants` where `takenVariants` is a set keyed "4a"/"4b". Below tier
+--- 4 the variant set is always empty and only the count matters.
+---
+--- **A PLAYER MAY HOLD ONE 4a AND ONE 4b AT ONCE, BUT NEVER TWO OF THE SAME** (§4.4). That is
+--- what gives the endgame two rhythms on one board: a decade-long Manchurian pine ticking away
+--- while eight oaks are turned over every two years at the same money.
+function Offers:getRemainingForestrySlots(farmId, tierIndex)
+	if self.contractStore == nil or self.contractStore.getForestryContracts == nil then
+		return math.huge, {}
+	end
+
+	local held = self.contractStore:getForestryContracts(farmId)
+	local cap = Offers.FORESTRY_SLOTS[tierIndex or 1] or Offers.FORESTRY_SLOTS[1]
+
+	local taken = {}
+	if tierIndex == 4 then
+		local species = Offers.getForestrySpecies()
+		for _, contract in ipairs(held) do
+			local variant = Offers.getForestryVariant(contract, species, tierIndex)
+			if variant ~= nil then
+				taken[variant] = true
+			end
+		end
+	end
+
+	return math.max(0, cap - #held), taken
+end
+
+--- Why a forestry signing was refused. A button that silently does nothing is the worst outcome
+--- — the same reasoning as `REFUSED_BUDGET`, and forestry needs its own because its cap is a
+--- different mechanic that the shared budget message would misdescribe.
+Offers.REFUSED_FORESTRY_SLOTS = "forestrySlots"
+Offers.REFUSED_FORESTRY_VARIANT = "forestryVariant"
+
+--- Top the board up with forestry offers. Called from `refresh`.
+---
+--- ⚠ **THE OFFER CAP AND THE SIGNING CAP ARE DIFFERENT NUMBERS AND MUST STAY THAT WAY.**
+--- `getForestryOfferCap` says how many are SHOWN — two at tiers 2-4 so the species is a choice —
+--- while `FORESTRY_SLOTS` says how many may be HELD. Collapsing them would take the choice back
+--- off the player at exactly the tiers where there is one to make.
+---
+--- Generates nothing at all when the map has no chip buyer, or no species with a measured
+--- volume. Silence is the correct degradation: a map with no forestry is a map with no forestry.
+function Offers:refreshForestryOffers(farmId, existingCount, tier, tierIndex, reputation)
+	local remaining, taken = self:getRemainingForestrySlots(farmId, tierIndex)
+	if remaining <= 0 then
+		return
+	end
+
+	local market = self:getChipMarket()
+	if market == nil then
+		return
+	end
+
+	local species = Offers.getForestrySpecies()
+
+	-- ⚠ **NOT `math.min(cap, remaining)`, AND THE FIRST VERSION OF THIS LINE WAS.**
+	--
+	-- `remaining` is how many may be SIGNED — one, at tiers 1-3. Clamping the offer count to it
+	-- shows exactly one offer there, which is precisely the thing the two-offer ruling exists to
+	-- prevent: at tier 2 the board would pick the species FOR the player. Caught by the guard
+	-- immediately below this function, three lines after the comment saying not to do it.
+	--
+	-- `remaining <= 0` has already returned above, so a farm that cannot sign anything is still
+	-- shown nothing.
+	local cap = Offers.getForestryOfferCap(tierIndex)
+
+	-- What is already on the board, so a second offer is a different SPECIES rather than the
+	-- same tree twice. Two identical oak offers differing only in the money roll is not a choice.
+	local shown = {}
+	for _, offer in ipairs(self.offers) do
+		if offer.farmId == farmId and offer.speciesName ~= nil then
+			shown[offer.speciesName] = true
+		end
+	end
+
+	local attempts = 0
+
+	while existingCount < cap do
+		-- Bounded, because the pool can be smaller than the cap — tier 3 has two species, and
+		-- if one is already on the board and one is already signed there is nothing left to
+		-- offer. Without this the loop spins forever on a map with few species.
+		attempts = attempts + 1
+		if attempts > 20 then
+			break
+		end
+
+		local pick
+
+		if tierIndex == 4 then
+			-- ONE 4a AND ONE 4b, NEVER TWO OF THE SAME. Force the variant that is still free
+			-- rather than rolling and discarding, or a farm holding a 4a would see 4a offers it
+			-- could not sign 60% of the time.
+			local variant
+			if taken["4a"] then
+				variant = "4b"
+			elseif taken["4b"] then
+				variant = "4a"
+			end
+
+			pick = Offers.rollForestryTier4(species, variant)
+		else
+			local pool = Offers.getForestrySpeciesForTier(species, tierIndex)
+			if #pool > 0 then
+				pick = pool[math.random(1, #pool)]
+			end
+		end
+
+		if pick == nil then
+			break
+		end
+
+		if not shown[pick.name] then
+			if self:createForestryOffer(farmId, pick, tier, market, reputation) == nil then
+				break
+			end
+
+			shown[pick.name] = true
+			existingCount = existingCount + 1
+		end
+	end
 end
 
 -- ---------------------------------------------------------------------------

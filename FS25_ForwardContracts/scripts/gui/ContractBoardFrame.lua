@@ -14,6 +14,10 @@ ContractBoardFrame.ENTRY_SPOT_OFFER = "spotOffer"
 -- than opening the negotiation dialog.
 ContractBoardFrame.ENTRY_ANIMAL_OFFER = "animalOffer"
 
+--- A POSTED offer: the terms are stated and there is nothing to haggle over. Forestry only, so
+--- far. *"Posted. Wood is wood, end of story."* — user, 2026-08-01.
+ContractBoardFrame.ENTRY_FORESTRY_OFFER = "forestryOffer"
+
 -- Reputation stages, lowest first. Deliberately words rather than a percentage: the
 -- player should know roughly where they stand, not be able to optimise a number.
 -- Edit freely — the bar reads whichever labels are here.
@@ -116,6 +120,14 @@ function ContractBoardFrame:rebuild()
 				kind = ContractBoardFrame.ENTRY_SPOT_OFFER
 			elseif offer.unit == ContractStore.UNIT_HEAD then
 				kind = ContractBoardFrame.ENTRY_ANIMAL_OFFER
+			elseif offer.isPosted then
+				-- ⚠ **BRANCH ON THE FLAG, NEVER ON A TYPE LIST.** A forestry offer carries
+				-- KIND_SUPPLY and UNIT_LITRES exactly like a crop one, so without this it falls
+				-- through to the bottom of `onSign` and opens `NegotiationDialog` — a haggle
+				-- over a price that was never negotiable. A flag says what the offer IS; a type
+				-- list has to be kept in step with every type ever added, which is the shape of
+				-- the five-list bug.
+				kind = ContractBoardFrame.ENTRY_FORESTRY_OFFER
 			end
 
 			table.insert(self.entries, { kind = kind, offer = offer })
@@ -353,6 +365,28 @@ function ContractBoardFrame:describeEntry(entry)
 					formatDeadline(contract.expiryDay))
 		end
 
+		-- FORESTRY. Progress on BOTH halves, because both gate completion: the litres and the
+		-- trees. Showing only the litres would let a player deliver everything, watch nothing
+		-- happen, and have no way to find out why — which is the fault `notifySale` was written
+		-- for and is not worth repeating here.
+		--
+		-- Days, not "year N of M": the whole tension is the delivery window at the end, 2.4
+		-- months at tier 1, and nobody plans a haulage run around "0.2 years left".
+		if ContractStore.isForestryContract(contract) then
+			local store = ForwardContracts.contractStore
+			local daysLeft = store ~= nil and store:getDaysRemaining(contract) or nil
+
+			return string.format("%s — %s",
+					ContractBoardFrame.speciesName(contract.speciesName),
+					g_i18n:getText("fc_entry_forestryActive")),
+				string.format("%s of %s · %d of %d planted · %s",
+					g_i18n:formatVolume(delivered),
+					g_i18n:formatVolume(contract.quotaThisYear),
+					contract.planted or 0, contract.plantingFloor or 0,
+					daysLeft ~= nil and string.format("%d days left", math.max(daysLeft, 0))
+						or "term running")
+		end
+
 		return string.format("%s — %s", productName(contract.fillTypeIndex),
 				g_i18n:getText("fc_entry_active")),
 			string.format("%s of %s this year · year %d of %d",
@@ -385,6 +419,20 @@ function ContractBoardFrame:describeEntry(entry)
 				offer.quotaPerYear, offer.years,
 				g_i18n:formatMoney(offer.rate or 0, 0, true, true),
 				offer.client.name)
+	end
+
+	-- FORESTRY. The row leads with the SPECIES and the two numbers that decide whether the
+	-- player can take it: how many trees, and how long. Not the litres — 204,188 l of chips is
+	-- an unreadable number, and "about 3 oaks over 2.2 years" is the same commitment said in
+	-- the units the job is actually done in.
+	if entry.kind == ContractBoardFrame.ENTRY_FORESTRY_OFFER then
+		return ContractBoardFrame.markRenewal(offer,
+				string.format("%s — %s",
+					ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
+					g_i18n:getText("fc_entry_forestry"))),
+			string.format("%s of chips · plant %d · within %.1f years · %s",
+				g_i18n:formatVolume(offer.quotaTotal or 0),
+				offer.plantingFloor or 0, offer.termYears or 0, offer.client.name)
 	end
 
 	-- A PRODUCT offer shares the crop kind, unit and settlement path, so only `contractType`
@@ -688,6 +736,35 @@ end
 --- which a player should take.
 ---
 --- Falls back to the plain label for contracts signed before the rebuild, which carry no type.
+--- A species name a player can read. "JAPANESEZELKOVA" is a database key, not a tree.
+---
+--- Prefers the tree type's OWN title, which Giants has already put through `g_i18n:convertText`
+--- (`misc/TreePlantManager.lua:171`) and which is therefore localised and correctly spelled for
+--- whatever language the game is in. Falls back to title-casing the raw registry name, which is
+--- upper case and jammed together, so a modded species with no title still reads as words.
+function ContractBoardFrame.speciesName(name)
+	if name == nil then
+		return "Timber"
+	end
+
+	-- Already a title rather than a registry key: anything with a lower-case letter in it has
+	-- been through `convertText`, since registry names are upper-cased on the way in
+	-- (`TreePlantManager.lua:181`).
+	if name:find("%l") ~= nil then
+		return name
+	end
+
+	local species = Offers ~= nil and Offers.getForestrySpecies ~= nil
+		and Offers.getForestrySpecies() or {}
+	local entry = species[name]
+
+	if entry ~= nil and entry.title ~= nil and entry.title:find("%l") ~= nil then
+		return entry.title
+	end
+
+	return name:sub(1, 1) .. name:sub(2):lower()
+end
+
 function ContractBoardFrame.describeContractType(record)
 	local key = "fc_entry_livestock"
 
@@ -734,6 +811,37 @@ function ContractBoardFrame:describeDetail(entry)
 					delivered, contract.quotaThisYear,
 					contract.yearIndex, contract.years,
 					contract.consecutiveMisses, ContractStore.MAX_CONSECUTIVE_MISSES),
+				nil
+		end
+
+		-- FORESTRY. Two independent things outstanding, and the panel must say where BOTH stand.
+		--
+		-- **THE PLANTING LINE IS THE ONE THAT MATTERS.** A player who delivers every litre and
+		-- has planted too few sees nothing happen and has no way to work out why — the exact
+		-- fault that made `Settlement:notifySale` necessary ("a 40% loss with no visible cause
+		-- is not difficulty, it is a missing instrument"). It states what happened and what is
+		-- outstanding, and nothing else: no advice, no target, no assessment of whether they can
+		-- manage it. That is the "never baby the player" rule.
+		if ContractStore.isForestryContract(contract) then
+			local store = ForwardContracts.contractStore
+			local daysLeft = store ~= nil and store:getDaysRemaining(contract) or nil
+			local planted = contract.planted or 0
+			local floor = contract.plantingFloor or 0
+
+			return string.format("%s — forestry",
+					ContractBoardFrame.speciesName(contract.speciesName)),
+				string.format(
+					"Deliver %s of woodchips at %s per litre.\n\nDelivered: %s of %s.\nPlanted: %d of %d %s since signing.\n\n%s\n%s\nThe contract completes when BOTH are met, and completes the moment they are — the slot comes straight back.\n\nChips are chips at the weighbridge, so where they came from is not checked. The planting is.",
+					g_i18n:formatVolume(contract.quotaThisYear),
+					g_i18n:formatMoney(contract.rate, 3, true, true),
+					g_i18n:formatVolume(delivered),
+					g_i18n:formatVolume(contract.quotaThisYear),
+					planted, floor,
+					ContractBoardFrame.speciesName(contract.speciesName),
+					daysLeft ~= nil
+						and string.format("Deadline: %d days remaining.", math.max(daysLeft, 0))
+						or "Deadline: unknown.",
+					ContractBoardFrame.describeDelivery(contract)),
 				nil
 		end
 
@@ -786,6 +894,40 @@ function ContractBoardFrame:describeDetail(entry)
 				g_i18n:formatMoney(offer.rate, 3, true, true),
 				math.floor(offer.premium * 100 + 0.5),
 				offer.suggestedStation or "—"),
+			g_i18n:getText("fc_button_accept")
+	end
+
+	-- FORESTRY. POSTED — *"Posted. Wood is wood, end of story."*
+	--
+	-- Leads with the job in the units the job is done in: how many trees, how long, and how much
+	-- of the term is left over to actually haul in. 204,188 l is unreadable; "about 3 oaks" and
+	-- "a 2.4-month window at the end" are the same commitment stated so it can be judged.
+	--
+	-- **NO COVERAGE HINT, and there is no honest one to give** (FORESTRY.md §8, ruled
+	-- 2026-08-01): any land grows trees, so there is no denominator. The planting floor is the
+	-- honest number instead — it states the commitment rather than assessing the player.
+	if entry.kind == ContractBoardFrame.ENTRY_FORESTRY_OFFER then
+		local windowMonths = (offer.windowDays or 0)
+			/ math.max((g_currentMission.environment.daysPerPeriod or 1), 1)
+
+		return ContractBoardFrame.markRenewal(offer,
+				string.format("%s — forestry",
+					ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName))),
+			string.format(
+				"%s wants %s of woodchips within %.1f years.\n\nPlant at least %d %s after signing — that is what the contract checks.\nPrice: %s per litre, locked for the whole term.\nSuggested buyer: %s.\n\nThe trees need about %.1f years to mature, which leaves roughly %.1f months at the end to fell, chip and haul.\n\n%s\n\nChips are chips at the weighbridge, so where they came from is not checked — the planting is. Fixed terms, no negotiation.",
+				offer.client.name,
+				g_i18n:formatVolume(offer.quotaTotal or 0),
+				offer.termYears or 0,
+				offer.plantingFloor or 0,
+				ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
+				g_i18n:formatMoney(offer.rate or 0, 3, true, true),
+				offer.suggestedStation or "—",
+				((offer.termYears or 0) - (offer.termYears or 0) / 11),
+				windowMonths,
+				ContractBoardFrame.describeStanding(offer.client)),
+
+			-- ACCEPT, not negotiate. Posted terms, and `onActivateEntry` routes it to the
+			-- posted path — a "negotiate" label would promise a haggle that does not exist.
 			g_i18n:getText("fc_button_accept")
 	end
 
@@ -925,6 +1067,47 @@ function ContractBoardFrame:onActivateEntry()
 			ContractBoardFrame.describeMultiplier(offer, false),
 			g_i18n:formatMoney(offer.completionBonus or 0, 0, true, true),
 			self:describeAnimalFloors(offer)))
+		return
+	end
+
+	-- FORESTRY. Posted, so it signs straight from the board with no dialog — and it is checked
+	-- against its OWN cap, never the shared budget, because it sits outside it entirely (§6).
+	if entry.kind == ContractBoardFrame.ENTRY_FORESTRY_OFFER then
+		local offer = entry.offer
+		local contract, refusal = offers:acceptForestryOffer(offer)
+
+		self:rebuild()
+
+		-- A BUTTON THAT SILENTLY DOES NOTHING IS THE WORST OUTCOME. The cap can be spent between
+		-- the board being built and the offer being taken, and each refusal is a different
+		-- mechanic that the other's wording would misdescribe.
+		if contract == nil then
+			if refusal == Offers.REFUSED_FORESTRY_VARIANT then
+				InfoDialog.show(
+					"You already hold a contract of this kind.\n\nAt the top tier you may run "
+					.. "two forestry contracts at once, but they must be different kinds: one "
+					.. "for a slow, long-term species and one for a quicker tree at the same "
+					.. "money.\n\nFinish the one you are holding, or wait for the other kind "
+					.. "to be offered.")
+			else
+				InfoDialog.show(
+					"You are already holding as many forestry contracts as your reputation "
+					.. "allows.\n\nForestry has its own limit and does not compete with your "
+					.. "other contracts — but trees take years, so it is a short list. Finish "
+					.. "one, or raise your reputation.")
+			end
+			return
+		end
+
+		InfoDialog.show(string.format(
+			"Contract signed with %s.\n\n%s of woodchips within %.1f years.\nRate: %s per litre, locked for the term.\n\nPlant at least %d %s from today. Trees already in the ground do not count — the term is priced on growing them from scratch.\n\nDeliver to %s. The contract completes as soon as both the chips and the trees are done.",
+			offer.client.name,
+			g_i18n:formatVolume(offer.quotaTotal or 0),
+			offer.termYears or 0,
+			g_i18n:formatMoney(offer.rate or 0, 3, true, true),
+			offer.plantingFloor or 0,
+			ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
+			offer.suggestedStation or "any buyer"))
 		return
 	end
 

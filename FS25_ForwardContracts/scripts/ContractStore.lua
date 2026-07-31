@@ -391,18 +391,56 @@ end
 --- per-type slot tables because nobody had ever added them up: on per-type slots a tier-4 farm
 --- could hold 13 contracts worth ~£950,000 a year, which is the mega-farm the mod exists not to
 --- create. Every individual figure was defensible; the sum was not.
+--- ⛔ **FORESTRY IS DELIBERATELY EXCLUDED TOO, and it has its own cap.** FORESTRY.md §6, in
+--- the user's words:
+---
+--- > *"Forestry should be exempt from the slots as it doesn't feed into anything else (a crop
+--- > set up feeds into animals or productions whereas forestry is simply forestry)."*
+---
+--- And a second argument that removes the income objection: **forestry income is inherently
+--- deferred.** Payment lands on delivery and delivery cannot happen before the trees mature, so
+--- a nine-year catalpa contract pays NOTHING for eight years and then a lump. It cannot inflate
+--- an annual balance the way an extra crop slot would — which is the fault §6 exists to prevent
+--- and the one "add up the totals" has caught repeatedly here.
+---
+--- Its own cap is 1 / 1 / 1 / 2 — see `Offers:getRemainingForestrySlots`.
 function ContractStore:getActiveContractCount(farmId)
 	local count = 0
 
 	for _, contract in ipairs(self.contracts) do
 		if contract.farmId == farmId
 			and not contract.isComplete
-			and contract.kind ~= ContractStore.KIND_SPOT then
+			and contract.kind ~= ContractStore.KIND_SPOT
+			and not ContractStore.isForestryContract(contract) then
 			count = count + 1
 		end
 	end
 
 	return count
+end
+
+--- Whether this is a forestry contract, by the one field that says so.
+---
+--- Tested on `speciesName` rather than on `contractType`, because a contract loaded from a
+--- savegame written before the rebuild DEFAULTS `contractType` to "SUPPLY" (see `load`), and a
+--- forestry contract without its species could not be settled anyway. One field, one meaning.
+function ContractStore.isForestryContract(contract)
+	return contract ~= nil and contract.speciesName ~= nil
+end
+
+--- Every live forestry contract this farm holds.
+function ContractStore:getForestryContracts(farmId)
+	local result = {}
+
+	for _, contract in ipairs(self.contracts) do
+		if contract.farmId == farmId
+			and not contract.isComplete
+			and ContractStore.isForestryContract(contract) then
+			table.insert(result, contract)
+		end
+	end
+
+	return result
 end
 
 function ContractStore:getActiveHeadContracts(farmId)
