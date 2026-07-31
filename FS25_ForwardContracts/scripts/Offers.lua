@@ -499,6 +499,15 @@ function Offers:getTrainOnlyStations()
 	return excluded
 end
 
+--- > # ⚠ WOOD IS NO LONGER CONTRACTABLE. THIS IS NOW A DIAGNOSTIC, NOT A PRICING INPUT.
+--- >
+--- > `Offers.isForestryOnlyFillType` drops WOOD from the crop and spot pools entirely
+--- > (2026-08-02), so nothing derives a quota from this number any more. It is KEPT because
+--- > `fcSellable` still lists wood and must state an honest rate rather than the £1.00/l lie,
+--- > and because the reasoning below is the evidence that removed logs from the mod.
+--- >
+--- > **Do not delete it, and do not re-derive a contract from it.** FORESTRY.md §7.
+---
 --- ⚠ WOOD IS THE ONE FILL TYPE WHOSE LISTED PRICE IS A LIE. See FORESTRY.md §1.1-1.2.
 ---
 --- `SellingStation:sellFillType` takes `extraAttributes.price` IN PLACE OF the whole price
@@ -907,12 +916,17 @@ Offers.MAX_PRODUCT_OFFERS = 1
 ---
 --- Products are identified from `subType.output`, so **an animal mod adding a producing species
 --- registers itself** and nothing here needs a list.
+---
+--- It ALSO drops the two wood fill types, which no other contract line may touch. See
+--- `Offers.isForestryOnlyFillType`.
 function Offers:splitCandidates(sellable)
 	local products = Animals.getAllProductFillTypes()
 	local crops, animalProducts = {}, {}
 
 	for _, entry in pairs(sellable) do
-		if products[entry.fillTypeIndex] then
+		if Offers.isForestryOnlyFillType(entry.fillTypeIndex) then
+			-- Neither a crop nor a product. Forestry builds its own candidate.
+		elseif products[entry.fillTypeIndex] then
 			table.insert(animalProducts, entry)
 		else
 			table.insert(crops, entry)
@@ -920,6 +934,43 @@ function Offers:splitCandidates(sellable)
 	end
 
 	return crops, animalProducts
+end
+
+--- WOOD and WOODCHIPS belong to the FORESTRY LINE AND NOTHING ELSE.
+---
+--- Both used to sit in the crop pool, because the only test `getSellableFillTypes` applies is
+--- "does some station buy this". So the board could generate a negotiated annual wood contract,
+--- and a 1-2 day woodchip spot order, alongside the forestry line they were designed to replace.
+---
+--- **WOOD — dropped because its listed price is a lie and its quality spread is 150x.**
+--- FORESTRY.md §2: `SellingStation:sellFillType` takes `extraAttributes.price` in place of the
+--- whole price expression (`objects/SellingStation.lua:374-377`), so a delivery realises
+--- anywhere from K=0.008 (intact oak, branches on) to K=1.200 (8 m delimbed pine log). A crop
+--- contract has no way to express that, and a player with good logs wants the sawmill, not a
+--- contract. Wood has no seasonal factors at all (`maps_fillTypes.xml:661`), so there is nothing
+--- for a forward contract to hedge either — which is the argument that removed it.
+---
+--- **WOODCHIPS — dropped by user ruling 2026-08-02**, answering the one question FORESTRY.md
+--- left open here. A crop chips contract is strictly easier than a forestry one of the same
+--- rung — no species, no planting floor, an annual quota instead of a term — so the two would
+--- sit on the same board asking for the same product at the same money for different work.
+--- **This also removes woodchip SPOT orders**, which is a real loss and was accepted as the
+--- price of one product having one contract shape.
+---
+--- ⚠ **NOT A MIN-MAXING DEFENCE, and it must not be read as one.** §1's framing stands: the
+--- residual loophole — plant N trees, deliver chips cut from the map's own forest — stays open
+--- deliberately, because chips are species-blind at the till and the mod observes rather than
+--- polices. This is about there being ONE contract shape per product, not about policing where
+--- the litres came from.
+---
+--- By NAME through the `FillType` globals, matching `Offers.getRealisedRate`. `FillType` is nil
+--- in a bare unit-test environment, and the honest degradation there is to exclude nothing.
+function Offers.isForestryOnlyFillType(fillTypeIndex)
+	if FillType == nil then
+		return false
+	end
+
+	return fillTypeIndex == FillType.WOOD or fillTypeIndex == FillType.WOODCHIPS
 end
 
 --- A PRODUCT contract: a volume of an animal's output per year for a term (§5.2).
@@ -1405,30 +1456,36 @@ Offers.FORESTRY_SIMPLE = "FORESTRY_SIMPLE"
 Offers.FORESTRY_ECO = "FORESTRY_ECO"
 Offers.FORESTRY_SPECIALIST = "FORESTRY_SPECIALIST"
 
---- ⚠ `rateMultiplier` AND `minReputation` HERE ARE UNTUNED FEEL NUMBERS. They are the only
---- invented constants in the forestry line and FORESTRY.md has always said so: *"They are
---- balance constants... set them once the loop has been played, not before."* Everything else
---- in this file's forestry code is derived or measured. Raise them with the user; do not
---- quietly re-tune them here.
+--- > # ⛔ `rateMultiplier` WAS REMOVED FROM THESE TIERS ON 2026-08-02. DO NOT RESTORE IT.
+--- >
+--- > It existed to police LOG QUALITY: an intact oak realises K=0.008 against 1.200 for an 8 m
+--- > delimbed log, so a flat rate would have paid 150x too much for tipping whole trees.
+--- >
+--- > **Woodchips have no quality axis at all.** Once wood is chipped its geometry is gone, and
+--- > `WoodCrusher` applies no size or quality gate whatsoever — the only condition is
+--- > `splitType.woodChipsPerLiter > 0` (`vehicles/specializations/WoodCrusher.lua:457`). Chips
+--- > arrive through an ordinary unload trigger with no `extraAttributes`, so their listed price
+--- > is real and every species fetches the same.
+--- >
+--- > So a multiplier has nothing left to police, and keeping it would actively BREAK THE HEDGE:
+--- > `(m-1) x realisedValue` tracks the market instead of locking against it, which is the
+--- > opposite of what a forward contract is. Forestry settles FLAT, exactly like a crop.
+--- > FORESTRY.md §7, and the settlement note in `Settlement:onDelivery`.
 ---
---- **WHAT THE MULTIPLIER ACTUALLY DOES, AND IT IS EASY TO GET BACKWARDS.** Under money-first
---- the rung fixes the MONEY, so a premium cannot pay more — it can only ask for less. See
---- `Offers.getPostedRate` and the ordering warning in `createForestryOffer`.
----
---- **TIER 1 IS 1.00 ON PURPOSE, AND IT IS STILL NOT NEUTRAL.** Its premium is DERIVED rather
---- than posted: a tier-1 contract cannot know what species will arrive, so it anchors on WOOD's
---- own declared price, which sits above most real timber. That is worth about 10% and it is
---- FORESTRY.md's original "wood price + a modest %". Adding a multiplier on top would be
---- charging that premium twice. See `Offers.getRealisedRate`.
+--- > # ⚠ THESE THREE TIERS ARE THEMSELVES SUPERSEDED and are awaiting phase-3 step 3.
+--- >
+--- > simple / eco / specialist was a `contractType` axis. The closed design replaces it with
+--- > SPECIES tiers banded by growth time, plus a 4a/4b roll — FORESTRY.md §4.1. Nothing
+--- > generates a forestry offer yet, so this block is inert in the meantime.
 ---
 --- `minReputation` is a TRUST gate, not a capability one — a buyer wanting provenance-verified
 --- timber asks an established supplier, not a stranger. It deliberately does NOT assess whether
 --- the player could grow the trees; that is the "never baby the player" rule, and the honest
 --- constraint on eco contracts is the TERM, which is derived. See `getForestryTiersFor`.
 Offers.FORESTRY_TIERS = {
-	{ contractType = Offers.FORESTRY_SIMPLE, minReputation = 0.00, rateMultiplier = 1.00 },
-	{ contractType = Offers.FORESTRY_ECO, minReputation = 0.25, rateMultiplier = 1.15 },
-	{ contractType = Offers.FORESTRY_SPECIALIST, minReputation = 0.50, rateMultiplier = 1.30 },
+	{ contractType = Offers.FORESTRY_SIMPLE, minReputation = 0.00 },
+	{ contractType = Offers.FORESTRY_ECO, minReputation = 0.25 },
+	{ contractType = Offers.FORESTRY_SPECIALIST, minReputation = 0.50 },
 }
 
 --- Whether a forestry tier requires the wood to have been planted and grown by the player.
@@ -1491,26 +1548,29 @@ end
 --- > Under a flat rate that is a 98% subsidy for LESS work: the same litres, no delimbing, no
 --- > cutting, and fewer trees felled because branches carry volume. Strictly dominant.
 ---
---- So forestry settles on a MULTIPLIER, exactly as livestock does and for the identical reason
---- already recorded at `ANIMAL_TIERS`: *"a fixed cash rate per head would top up LESS the better
---- the animal was, and the player would earn most by delivering their worst stock. That is
---- precisely backwards."* Wood has the same shape — cut badly, and a flat rate pays you MORE.
+--- > # ⛔ AND THE MULTIPLIER IS GONE TOO. REVERSED AGAIN 2026-08-02 — THIS IS THE LIVE ANSWER.
+--- >
+--- > The reversal above was about LOGS, and logs left the mod. **Woodchips have no quality
+--- > axis**, so there is no junk-chip case for a multiplier to catch and the argument that
+--- > introduced it does not apply to the product that remains.
+--- >
+--- > Forestry now settles FLAT, like a crop: `(contract.rate - realisedRate) x litres`. That is
+--- > the true hedge, and it is the whole reason chips were chosen — they carry a 3.2x seasonal
+--- > swing (0.53 to 1.69, `maps_fillTypes.xml:667-681`), the largest on any fill type here, and
+--- > WOOD carries none at all. A multiplier would have paid a fraction of whatever the market
+--- > did that month, which is a share of the swing rather than protection from it.
+--- >
+--- > **`getPostedRate` is deleted.** With no multiplier the posted rate IS the market rate, so
+--- > the function was an identity wearing a warning label. `createForestryOffer` reads the
+--- > candidate's rate directly and guards it there.
 ---
---- `Settlement:onDelivery` pays `(rateMultiplier - 1) x realisedValue`, so cutting properly
---- earns twice over: a better market price AND a bigger top-up. **The game's own pricing does
---- the policing and the mod still only observes and pays** (FORESTRY.md §2).
+--- The rate a posted forestry contract locks. POSTED, NOT NEGOTIATED — *"Posted. Wood is wood,
+--- end of story."* — user, 2026-08-01.
 ---
---- What this function still produces is the rate the QUOTA is derived at and the SHORTFALL
---- PENALTY is charged at — the value of a year of the contract when the wood is cut the way K
---- was measured. Same role `contract.rate` plays for livestock, and the same caveat: it is a
---- representative figure, not the settlement mechanism.
-function Offers.getPostedRate(marketRate, rateMultiplier)
-	if type(marketRate) ~= "number" or marketRate <= 0 then
-		return nil
-	end
-
-	return marketRate * (rateMultiplier or 1)
-end
+--- ⚠ **THE ORDERING WARNING IN `createForestryOffer` STILL STANDS** even with the multiplier
+--- gone: money-first means `quota x rate` must come out at `annualValue`, so the quota has to be
+--- derived at the SAME rate the contract signs at. Deriving at one price and signing at another
+--- is a silent overpayment that only shows up by adding a year up.
 
 --- A forestry offer. Money first, litres derived, terms posted.
 ---
@@ -1539,8 +1599,10 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 	-- 2026-08-01).
 	local client = forcedClient or self:getClient(farmId, false)
 
-	local rate = Offers.getPostedRate(candidate.marketRate, forestryTier.rateMultiplier)
-	if rate == nil then
+	-- FLAT. The posted rate is the market rate — there is no premium and no multiplier. See the
+	-- reversal note above `createForestryOffer`'s section, and `Settlement:onDelivery`.
+	local rate = candidate.marketRate
+	if type(rate) ~= "number" or rate <= 0 then
 		return nil
 	end
 
@@ -1565,8 +1627,12 @@ function Offers:createForestryOffer(farmId, candidate, tier, forestryTier, reput
 
 		-- POSTED. The rate is settled here and there is no negotiation profile, which is the
 		-- seam the board reads — see `isPosted`.
+		--
+		-- ⛔ NO `rateMultiplier`. Its absence is what makes `Settlement:onDelivery` treat this as
+		-- an ordinary hedged litre contract, and it is deliberate — see the reversal notes there
+		-- and at `FORESTRY_TIERS`. Adding one back does not error; it silently converts the
+		-- contract from a hedge into a share of the market.
 		rate = rate,
-		rateMultiplier = forestryTier.rateMultiplier,
 		contractType = forestryTier.contractType,
 
 		-- WHAT THIS CONTRACT IS MEANT TO BE WORTH IN A YEAR, kept so the invariant
@@ -1629,20 +1695,23 @@ function Offers:acceptForestryOffer(offer)
 		unit = ContractStore.UNIT_LITRES,
 		fillTypeIndex = offer.fillTypeIndex,
 
-		-- REPRESENTATIVE, not what settles. It is what the quota was derived at and what the
-		-- shortfall penalty is charged at. See Offers.getPostedRate.
+		-- **WHAT SETTLES, AND IT IS THE WHOLE OF IT.** `Settlement:onDelivery` pays
+		-- `(contract.rate - realisedRate) x litres`, so the chip price is locked here for the
+		-- life of the contract and the 3.2x seasonal swing is carried by the client either way.
+		-- That is the hedge, and chips were chosen precisely because they have one.
+		--
+		-- It is also what the quota was derived at and what the shortfall penalty is charged
+		-- at, so `quota x rate == annualValue` holds by construction.
 		rate = offer.rate,
 
-		-- **WHAT ACTUALLY SETTLES.** Settlement:onDelivery pays `(rateMultiplier - 1) x the
-		-- money the market really paid`, so wood cut badly earns proportionally less. Dropping
-		-- this field silently reverts forestry to flat-rate settlement and restores a 98%
-		-- subsidy for tipping whole trees — see the reversal note at Offers.getPostedRate.
-		rateMultiplier = offer.rateMultiplier,
+		-- ⛔ NO `rateMultiplier` IS PASSED, AND THAT IS THE POINT. Its presence is the ONLY
+		-- thing `Settlement:onDelivery` would branch on to leave the flat hedge. Reversed
+		-- 2026-08-02 — see FORESTRY_TIERS.
 
 		-- Posted terms carry no completion bonus. Livestock's exists because its bottom rung
 		-- sits BELOW market at 0.90 and would otherwise be strictly bad to sign (see
-		-- ANIMAL_TIERS.bonusShare). No forestry rung is below market — the lowest is 1.00
-		-- against an anchor already above most timber — so there is nothing to compensate for.
+		-- ANIMAL_TIERS.bonusShare). Forestry signs AT market, so there is nothing to
+		-- compensate for — the contract's value is certainty, not a premium.
 		completionBonus = 0,
 
 		quotaPerYear = offer.quotaPerYear,

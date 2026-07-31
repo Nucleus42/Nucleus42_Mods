@@ -164,10 +164,16 @@ function ContractStore:signContract(spec)
 		-- the panel shows delivered-of-total throughout.
 		isTermQuota = spec.isTermQuota,
 
-		-- Livestock only. The payment tracks each animal's OWN sale value times this,
-		-- rather than a flat cash rate — a fixed rate would top up less the better the
-		-- animal was, which would reward delivering poor stock (§4.6). `rate` above stays
-		-- as a representative cash figure for the shortfall penalty and the board.
+		-- LIVESTOCK ONLY, AND IT NO LONGER SETTLES ANYTHING. `Offers:createAnimalOffer` rolls it
+		-- within the tier's band and `rate` is already `anchor x rateMultiplier`, so this is
+		-- kept as the RECORD of how the rate was reached — `ContractBoardFrame.describeMultiplier`
+		-- reads it to say "18% ABOVE what a minimum-spec animal fetches at the dealer".
+		-- `settleAnimalsAgainst` pays flat `contract.rate` per head (§4.6 reversal, 2026-07-28).
+		--
+		-- ⛔ **FORESTRY MUST NEVER SET THIS.** It used to, and its presence is the one thing
+		-- `Settlement:onDelivery` would have branched on. That branch is deleted (2026-08-02) so
+		-- a stray value is now inert rather than dangerous — but set it on a litre contract and
+		-- the next person to read this file will believe forestry still has two settlement modes.
 		rateMultiplier = spec.rateMultiplier,
 
 		completionBonus = spec.completionBonus or 0,

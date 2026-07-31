@@ -83,31 +83,31 @@ function Settlement:onDelivery(delivery)
 	local realisedRate = self:getRealisedRate(delivery)
 	local countedMoney = realisedRate * countedLitres
 
-	-- TWO SETTLEMENT MODES, AND THE CONTRACT ITSELF SAYS WHICH. Branching on the presence of
-	-- `rateMultiplier` rather than on a list of contract types: a property of the contract
-	-- cannot fall out of step with the types, and a type list has to be maintained forever.
-	-- Same reasoning as `offer.isPosted`. Livestock also carries a multiplier but never
-	-- reaches here — head contracts are excluded by `getActiveContract`.
-	local adjustment
-
-	if contract.rateMultiplier ~= nil then
-		-- FORESTRY. Paid as a premium on what the timber ACTUALLY fetched, so quality of
-		-- cutting is rewarded rather than punished. FORESTRY.md, and the reversal note at
-		-- `Offers.getPostedRate`: a flat rate pays MORE for worse wood, because the litres are
-		-- identical and the market price is not. An intact oak realises 0.0069/l against 0.33
-		-- for the same tree cut up — 46x — so under a flat rate tipping whole trees would be a
-		-- 98% subsidy for strictly less work.
-		--
-		-- The quota is still LITRES, so a player who delivers junk still completes the
-		-- contract; they are simply paid a premium on wood worth nearly nothing. **The game's
-		-- own pricing does the policing. The mod observes and pays.**
-		adjustment = (contract.rateMultiplier - 1) * countedMoney
-	else
-		-- CROPS AND ANIMAL PRODUCTS. A true hedge: the agreed rate is honoured whatever the
-		-- market did, up or down. A litre of wheat is a litre of wheat, so there is no quality
-		-- axis for the player to game and nothing to reward.
-		adjustment = (contract.rate - realisedRate) * countedLitres
-	end
+	-- ONE SETTLEMENT MODE FOR EVERY LITRE CONTRACT — crops, animal products AND FORESTRY. The
+	-- agreed rate is honoured whatever the market did, up or down. That is the hedge, and it is
+	-- what the mod is named after.
+	--
+	-- > # ⛔ THE SECOND MODE WAS DELETED ON 2026-08-02. DO NOT REINSTATE IT.
+	-- >
+	-- > There used to be a branch on `contract.rateMultiplier ~= nil` paying
+	-- > `(rateMultiplier - 1) x countedMoney` — a premium on what the timber ACTUALLY fetched.
+	-- > It was correct for LOGS and only for logs: an intact oak realises 0.0069/l against 0.33
+	-- > for the same tree cut up, a 46x spread, so a flat rate was a 98% subsidy for tipping
+	-- > whole trees. The multiplier made the game's own pricing do the policing.
+	-- >
+	-- > **Logs left the mod, and woodchips have no quality axis to police.** `WoodCrusher`
+	-- > applies no size or quality gate at all (`vehicles/specializations/WoodCrusher.lua:457`),
+	-- > and chips reach the till through an ordinary unload trigger with no `extraAttributes`,
+	-- > so every chipped species fetches the same real listed price.
+	-- >
+	-- > Worse, keeping it would have BROKEN THE HEDGE on the one fill type chosen for having
+	-- > one. `(m-1) x realised` pays a fixed SHARE of whatever the market did that month;
+	-- > woodchips swing 3.2x across the year (0.53 to 1.69, `maps_fillTypes.xml:667-681`). A
+	-- > forward contract exists to remove that swing, not to take a cut of it.
+	-- >
+	-- > FORESTRY.md §7. Livestock is unaffected either way: head contracts never reach here
+	-- > (`getActiveContract` filters on UNIT_LITRES) and settle flat in `settleAnimalsAgainst`.
+	local adjustment = (contract.rate - realisedRate) * countedLitres
 
 	if adjustment ~= 0 then
 		-- addChange = true so it shows in the finance breakdown; force = true so it
