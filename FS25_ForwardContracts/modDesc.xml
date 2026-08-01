@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
-<modDesc descVersion="105">
+<modDesc descVersion="111">
 	<author>Nucleus42</author>
-	<version>0.1.0.0</version>
+	<version>1.0.0.0</version>
 
+	<!-- "Forward Contracts" is the mod's name, so it is not translated. The <de> entry exists
+	     because the submission checks want every declared language present, not because the
+	     string differs. -->
 	<title>
 		<en>Forward Contracts</en>
+		<de>Forward Contracts</de>
 	</title>
 
 	<description>
@@ -19,6 +23,20 @@ Livestock contracts run on Realistic Livestock genetics. Early on you supply hea
 Deliveries are local hauls you drive. Rail freight does not count.
 
 Requires Realistic Livestock (Ritter version).]]></en>
+		<!-- Machine-assisted translation, informal register to match the game's own voice.
+		     NOT yet read by a native speaker — get one to look at it before this goes further
+		     than a test submission. -->
+		<de><![CDATA[Mehrjährige landwirtschaftliche Lieferverträge mit namentlich bekannten Abnehmern.
+
+Verhandle einen festen Preis und einen jährlichen Abschlussbonus und liefere dann über die gesamte Vertragslaufzeit gegen ein Jahreskontingent. Der Preis steht fest, der Vertrag wirkt also als Absicherung: Steigt der Markt, bist du darunter gebunden; fällt er, trägt dich der Vertrag.
+
+Baue dir mit der Zeit einen Ruf auf. Die Abnehmer erinnern sich an dich, und Folgeaufträge bringen bessere Konditionen. Kurzfristige Sofortaufträge erscheinen neben den langen Vereinbarungen und werden besser bezahlt.
+
+Tierverträge bauen auf der Genetik von Realistic Livestock auf. Anfangs lieferst du Stückzahlen; mit wachsendem Ruf sinken die Zahlen und steigen die genetischen Anforderungen, bis du als Züchter im Jahr eine Handvoll Tiere lieferst, die sonst niemand hervorbringt.
+
+Lieferungen fährst du selbst. Bahntransport zählt nicht.
+
+Benötigt Realistic Livestock (Version von Ritter).]]></de>
 	</description>
 
 	<iconFilename>icon_ForwardContracts.dds</iconFilename>

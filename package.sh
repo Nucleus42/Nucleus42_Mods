@@ -45,15 +45,25 @@ fi
 rm -f "$OUT"
 
 # HEAD:<subtree> puts modDesc.xml at the root of the archive, which is what FS25 requires.
-git archive --format=zip -o "$OUT" "HEAD:$MOD"
+#
+# LICENSE is excluded rather than deleted. Giants' TestRunner rejects any file whose extension is
+# not on its allow-list (.xml .lua .dds .i3d .shapes .anim .ogg .wav .gls .ogv .gdm .grle .cache),
+# and an extensionless LICENSE fails that — no rename saves it, .txt is not on the list either.
+# The licence still belongs in the public repo, so it stays in git and only the zip drops it.
+git archive --format=zip -o "$OUT" "HEAD:$MOD" -- . ':(exclude)LICENSE'
 
-echo "Built $MOD.zip  (version $VERSION, $(git ls-files "$MOD" | wc -l | tr -d ' ') files)"
+# Counted from the archive, not from git ls-files, so the number cannot disagree with the zip.
+COUNT=$(unzip -Z1 "$OUT" | grep -cv '/$')
+
+echo "Built $MOD.zip  (version $VERSION, $COUNT files)"
 echo
 
 # A LEAK CHECK, because "the gitignore handles it" is a belief until something asserts it.
 # These are the three things that must never reach a player: design notes, the test harness
-# (which carries RL's data), and icon source files.
-LEAKS=$(unzip -Z1 "$OUT" | grep -E '(^|/)(test/|.*\.md$|_source_icon|.*\.xcf$|.*\.psd$)' | grep -v '^README.md$' || true)
+# (which carries RL's data), and icon source files. LICENSE is in here too — not because it
+# harms a player, but because TestRunner fails the whole submission over it, and the exclude
+# pathspec above is exactly the kind of thing that gets lost in a future edit.
+LEAKS=$(unzip -Z1 "$OUT" | grep -E '(^|/)(test/|.*\.md$|_source_icon|.*\.xcf$|.*\.psd$|LICENSE$)' | grep -v '^README.md$' || true)
 
 if [ -n "$LEAKS" ]; then
 	echo "❌ LEAKED FILES — do not send this zip:" >&2
@@ -66,5 +76,5 @@ if ! unzip -Z1 "$OUT" | grep -qx 'modDesc.xml'; then
 	exit 1
 fi
 
-echo "✅ Clean: modDesc.xml at root, no notes, no test harness, no icon sources."
+echo "✅ Clean: modDesc.xml at root, no notes, no test harness, no icon sources, no LICENSE."
 echo "   $OUT"
