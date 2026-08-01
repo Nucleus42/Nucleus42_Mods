@@ -3,12 +3,11 @@
 	<author>Nucleus42</author>
 	<version>1.0.0.0</version>
 
-	<!-- "Forward Contracts" is the mod's name, so it is not translated. The <de> entry exists
-	     because the submission checks want every declared language present, not because the
-	     string differs. -->
+	<!-- English only, deliberately. "Forward Contracts" is the mod's name and does not
+	     translate, and TestRunner rejects a <de> that is identical to the <en> as an obsolete
+	     localization. Only the description needs a German entry. Do not re-add <de> here. -->
 	<title>
 		<en>Forward Contracts</en>
-		<de>Forward Contracts</de>
 	</title>
 
 	<description>
