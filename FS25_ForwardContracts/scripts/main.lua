@@ -5,7 +5,9 @@ ForwardContracts = {}
 
 ForwardContracts.MOD_NAME = g_currentModName
 ForwardContracts.MOD_DIR = g_currentModDirectory
-ForwardContracts.VERSION = "0.1.0.0"
+-- Printed to the log on load. Keep in step with <version> in modDesc.xml — a tester reading
+-- the log against the mod list is exactly who notices when these disagree.
+ForwardContracts.VERSION = "1.0.0.0"
 
 -- Order matters: Offers reads constants off ContractStore at source time.
 source(ForwardContracts.MOD_DIR .. "scripts/DeliveryWatch.lua")
