@@ -1742,6 +1742,38 @@ function Offers.rollForestryTier4(species, variant)
 	return last.pool[math.random(1, #last.pool)], variant
 end
 
+--- A species name a player can read. "JAPANESEZELKOVA" is a database key, not a tree.
+---
+--- **LIVES HERE, NOT IN THE GUI, BECAUSE TWO PLACES NEED IT.** The board renders it and so does
+--- the planting-shortfall notification, and a species that reads "Oak" on the panel and "OAK" in
+--- a notification is the kind of small wrongness nobody files but everybody notices.
+--- `ContractBoardFrame.speciesName` delegates here.
+---
+--- Prefers the tree type's OWN title, which Giants has already put through `g_i18n:convertText`
+--- (`misc/TreePlantManager.lua:171`) and which is therefore localised and spelled properly for
+--- whatever language the game is in. Falls back to title-casing the registry name, which is
+--- upper case and jammed together, so a modded species with no title still reads as words.
+function Offers.getSpeciesTitle(name)
+	if name == nil then
+		return "Timber"
+	end
+
+	-- Already a title rather than a registry key: anything with a lower-case letter in it has
+	-- been through `convertText`, since registry names are upper-cased on the way in
+	-- (`TreePlantManager.lua:181`).
+	if name:find("%l") ~= nil then
+		return name
+	end
+
+	local entry = Offers.getForestrySpecies()[name]
+
+	if entry ~= nil and entry.title ~= nil and entry.title:find("%l") ~= nil then
+		return entry.title
+	end
+
+	return name:sub(1, 1) .. name:sub(2):lower()
+end
+
 --- How many forestry offers a farm at this rung sees at once.
 ---
 --- OFFERS SHOWN, not contracts signable — the cap on holdings is §6's 1 / 1 / 1 / 2, checked at

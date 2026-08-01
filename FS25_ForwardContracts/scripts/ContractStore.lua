@@ -509,8 +509,56 @@ function ContractStore:recordDelivery(contract, litres, money)
 	if contract.kind == ContractStore.KIND_SPOT and contract.remainingLitres <= 0 then
 		self:completeSpotOrder(contract)
 	elseif contract.isTermQuota then
-		self:tryCompleteTermContract(contract)
+		-- **THE ONE MOMENT A FORESTRY CONTRACT CAN LEAVE A PLAYER GENUINELY STUCK.** Every litre
+		-- delivered, and nothing happens — because the planting floor is short. The panel says
+		-- how many trees they have planted but deliberately never says how many are wanted, so
+		-- without this the only signal is an absence.
+		--
+		-- Getting here means `tryCompleteTermContract` refused, the litres are done and the
+		-- contract is still live — and the floor is the only remaining reason it can refuse.
+		--
+		-- FIRES EXACTLY ONCE, and by construction rather than by a flag: once
+		-- `remainingLitres` reaches zero, `getActiveContract` stops matching the contract
+		-- (`remainingLitres > 0`), so `Settlement` never calls `recordDelivery` on it again.
+		--
+		-- ⚠ NOT ALSO FIRED FROM `creditPlanting`. There it would repeat on every sapling — and
+		-- a player who is planting has already understood the message.
+		if not self:tryCompleteTermContract(contract)
+			and not contract.isComplete
+			and (contract.remainingLitres or 0) <= 0 then
+			self:notifyPlantingShortfall(contract)
+		end
 	end
+end
+
+--- Say that the litres are done and the trees are not. WHAT is outstanding, never HOW MUCH.
+---
+--- *"Quota met. This contract still needs Oak planted since signing."*
+---
+--- The count is deliberately never shown anywhere in the mod — it is `ceil(quota / chipsPerTree)`
+--- and therefore the quota restated, so it tells an honest player nothing and tells a min-maxer
+--- which threshold to game. See the ruling at `ContractBoardFrame`'s forestry offer branch.
+---
+--- This is the `notifySale` lesson applied: *"a 40% loss with no visible cause is not
+--- difficulty, it is a missing instrument."* The difference — and it is why this one line is
+--- enough — is that the fault here is RECOVERABLE. The floor counts PLANTINGS, not mature
+--- trees, so putting saplings in the ground completes the contract on the spot. Minutes and the
+--- price of a few saplings, not a lost term.
+function ContractStore:notifyPlantingShortfall(contract)
+	if g_currentMission == nil or g_currentMission.addIngameNotification == nil then
+		return
+	end
+
+	-- Through Offers, which owns the species registry, so the notification and the board can
+	-- never render the same species differently. See Offers.getSpeciesTitle.
+	local species = contract.speciesName
+
+	if Offers ~= nil and Offers.getSpeciesTitle ~= nil then
+		species = Offers.getSpeciesTitle(contract.speciesName)
+	end
+
+	g_currentMission:addIngameNotification(FSBaseMission.INGAME_NOTIFICATION_INFO,
+		string.format(g_i18n:getText("fc_forestry_plantingShort"), tostring(species)))
 end
 
 --- A forestry contract needs BOTH its litres and its trees. Complete it only when it has both.

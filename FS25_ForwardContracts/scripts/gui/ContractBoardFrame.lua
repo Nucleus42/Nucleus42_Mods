@@ -743,26 +743,13 @@ end
 --- whatever language the game is in. Falls back to title-casing the raw registry name, which is
 --- upper case and jammed together, so a modded species with no title still reads as words.
 function ContractBoardFrame.speciesName(name)
-	if name == nil then
-		return "Timber"
+	-- ONE IMPLEMENTATION, and it is not this one. The planting-shortfall notification renders
+	-- species names too, and two copies would drift — see `Offers.getSpeciesTitle`.
+	if Offers ~= nil and Offers.getSpeciesTitle ~= nil then
+		return Offers.getSpeciesTitle(name)
 	end
 
-	-- Already a title rather than a registry key: anything with a lower-case letter in it has
-	-- been through `convertText`, since registry names are upper-cased on the way in
-	-- (`TreePlantManager.lua:181`).
-	if name:find("%l") ~= nil then
-		return name
-	end
-
-	local species = Offers ~= nil and Offers.getForestrySpecies ~= nil
-		and Offers.getForestrySpecies() or {}
-	local entry = species[name]
-
-	if entry ~= nil and entry.title ~= nil and entry.title:find("%l") ~= nil then
-		return entry.title
-	end
-
-	return name:sub(1, 1) .. name:sub(2):lower()
+	return name ~= nil and name or "Timber"
 end
 
 function ContractBoardFrame.describeContractType(record)
