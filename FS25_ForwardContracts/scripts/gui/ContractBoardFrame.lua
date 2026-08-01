@@ -822,6 +822,11 @@ function ContractBoardFrame:describeDetail(entry)
 		-- is not difficulty, it is a missing instrument"). It states what happened and what is
 		-- outstanding, and nothing else: no advice, no target, no assessment of whether they can
 		-- manage it. That is the "never baby the player" rule.
+		--
+		-- ⛔ **AND IT NO LONGER EXPLAINS THE VERIFICATION MODEL.** The line about chips being
+		-- untraceable at the weighbridge was removed 2026-08-02 for advertising the loophole —
+		-- see the reversal note in the OFFER branch. "Both must be met" is a term the player
+		-- needs; why one of them cannot be traced is not.
 		if ContractStore.isForestryContract(contract) then
 			local store = ForwardContracts.contractStore
 			local daysLeft = store ~= nil and store:getDaysRemaining(contract) or nil
@@ -831,7 +836,7 @@ function ContractBoardFrame:describeDetail(entry)
 			return string.format("%s — forestry",
 					ContractBoardFrame.speciesName(contract.speciesName)),
 				string.format(
-					"Deliver %s of woodchips at %s per litre.\n\nDelivered: %s of %s.\nPlanted: %d of %d %s since signing.\n\n%s\n%s\nThe contract completes when BOTH are met, and completes the moment they are — the slot comes straight back.\n\nChips are chips at the weighbridge, so where they came from is not checked. The planting is.",
+					"Deliver %s of woodchips at %s per litre.\n\nDelivered: %s of %s.\nPlanted: %d of %d %s since signing.\n\n%s\n%s\nBoth must be met for the contract to complete.",
 					g_i18n:formatVolume(contract.quotaThisYear),
 					g_i18n:formatMoney(contract.rate, 3, true, true),
 					g_i18n:formatVolume(delivered),
@@ -899,31 +904,45 @@ function ContractBoardFrame:describeDetail(entry)
 
 	-- FORESTRY. POSTED — *"Posted. Wood is wood, end of story."*
 	--
-	-- Leads with the job in the units the job is done in: how many trees, how long, and how much
-	-- of the term is left over to actually haul in. 204,188 l is unreadable; "about 3 oaks" and
-	-- "a 2.4-month window at the end" are the same commitment stated so it can be judged.
+	-- > # ⛔ THIS PANEL STATES TERMS. IT DOES NOT EXPLAIN HOW TO DO THE JOB.
+	-- >
+	-- > Trimmed 2026-08-02 after the user compared it against the livestock panel: *"the
+	-- > instructions seem to hold the user's hand too much."* They were right, and the fault was
+	-- > not length — livestock's panel is longer. Every line there is something you are AGREEING
+	-- > TO. Three lines here were not, and all three are gone:
+	-- >
+	-- > | removed | why |
+	-- > | --- | --- |
+	-- > | *"The trees need about 2.0 years to mature, which leaves roughly 2.0 months at the end to fell, chip and haul."* | Planning advice. It did the subtraction for the player and then listed their job steps. The deadline and the species are both stated; how long an oak takes is the game |
+	-- > | *"Chips are chips at the weighbridge, so where they came from is not checked — the planting is."* | **It advertised the loophole.** §5.2 rules the loophole stays OPEN; it does not say the board should point at it. Leaving a door unlocked and putting up a sign are different decisions |
+	-- > | *"— that is what the contract checks"* | Explained the mechanic instead of stating the requirement |
+	-- >
+	-- > **Do not reinstate any of them**, and apply the same test to anything added here: is this
+	-- > a term of the agreement, or is it me helping them plan? See
+	-- > `~/.claude/CLAUDE.md` and FORESTRY.md §1 — *"offer opportunities, state terms, never
+	-- > assess whether they can meet them."*
+	--
+	-- The term's total VALUE was added at the same time, and it is a term rather than advice:
+	-- livestock states its own ("roughly £104,176 over the term") and a player should not have
+	-- to multiply 243,417 by 0.32 in their head to judge the deal.
 	--
 	-- **NO COVERAGE HINT, and there is no honest one to give** (FORESTRY.md §8, ruled
 	-- 2026-08-01): any land grows trees, so there is no denominator. The planting floor is the
 	-- honest number instead — it states the commitment rather than assessing the player.
 	if entry.kind == ContractBoardFrame.ENTRY_FORESTRY_OFFER then
-		local windowMonths = (offer.windowDays or 0)
-			/ math.max((g_currentMission.environment.daysPerPeriod or 1), 1)
-
 		return ContractBoardFrame.markRenewal(offer,
 				string.format("%s — forestry",
 					ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName))),
 			string.format(
-				"%s wants %s of woodchips within %.1f years.\n\nPlant at least %d %s after signing — that is what the contract checks.\nPrice: %s per litre, locked for the whole term.\nSuggested buyer: %s.\n\nThe trees need about %.1f years to mature, which leaves roughly %.1f months at the end to fell, chip and haul.\n\n%s\n\nChips are chips at the weighbridge, so where they came from is not checked — the planting is. Fixed terms, no negotiation.",
+				"%s wants %s of woodchips within %.1f years.\n\nPlant at least %d %s after signing.\nPrice: %s per litre, locked for the whole term.\nWorth roughly %s over the term.\nSuggested buyer: %s.\n\n%s\n\nFixed terms, no negotiation.",
 				offer.client.name,
 				g_i18n:formatVolume(offer.quotaTotal or 0),
 				offer.termYears or 0,
 				offer.plantingFloor or 0,
 				ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
 				g_i18n:formatMoney(offer.rate or 0, 3, true, true),
+				g_i18n:formatMoney((offer.quotaTotal or 0) * (offer.rate or 0), 0, true, true),
 				offer.suggestedStation or "—",
-				((offer.termYears or 0) - (offer.termYears or 0) / 11),
-				windowMonths,
 				ContractBoardFrame.describeStanding(offer.client)),
 
 			-- ACCEPT, not negotiate. Posted terms, and `onActivateEntry` routes it to the
@@ -1100,7 +1119,7 @@ function ContractBoardFrame:onActivateEntry()
 		end
 
 		InfoDialog.show(string.format(
-			"Contract signed with %s.\n\n%s of woodchips within %.1f years.\nRate: %s per litre, locked for the term.\n\nPlant at least %d %s from today. Trees already in the ground do not count — the term is priced on growing them from scratch.\n\nDeliver to %s. The contract completes as soon as both the chips and the trees are done.",
+			"Contract signed with %s.\n\n%s of woodchips within %.1f years.\nRate: %s per litre, locked for the term.\n\nPlant at least %d %s from today. Trees already in the ground do not count.\n\nDeliver to %s.",
 			offer.client.name,
 			g_i18n:formatVolume(offer.quotaTotal or 0),
 			offer.termYears or 0,
