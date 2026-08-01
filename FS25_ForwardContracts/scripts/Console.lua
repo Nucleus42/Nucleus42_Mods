@@ -25,7 +25,7 @@ Console.COMMANDS = {
 	{ name = "fcOffer", desc = "Force an offer: [supply|breeding|product] [species or fillType] [client] [tier]", fn = "consoleOffer" },
 	{ name = "fcFeed", desc = "Show what this farm has fed and the equipment it proves. 'clear' wipes it", fn = "consoleFeed" },
 	{ name = "fcSellable", desc = "List every fill type the board may contract, with its rate and best buyer [filter]", fn = "consoleSellable" },
-	{ name = "fcWood", desc = "Log every wood delivery's species, litres and realised rate. 'off' stops it", fn = "consoleWood" },
+	{ name = "fcWood", desc = "Log every wood delivery's species, litres and realised rate. Off by default; 'off' stops it", fn = "consoleWood" },
 }
 
 function Console.new(mod)
@@ -874,10 +874,13 @@ end
 --- the same ratio computed on whatever was actually cut, so the constant can be checked against
 --- ordinary play rather than a measurement run.
 ---
---- **ON by default while forestry is being built.** It used to default off and had to be
---- re-armed after every launch, which silently cost a measurement — the tree was felled,
---- processed and sold, and log.txt was empty because the game had restarted in between. Nothing
---- reported that, and nothing could. See WoodWatch.new.
+--- **OFF by default since 2026-08-02**, now that forestry is built and play-tested. It was ON
+--- through the build because the opposite had already cost a measurement — the tree was felled,
+--- processed and sold, and log.txt was empty because the game had restarted since it was last
+--- armed. Nothing reported that, and nothing could.
+---
+--- ⚠ **THAT TRAP IS BACK NOW THAT IT DEFAULTS OFF.** Re-arm it after every launch if you are
+--- taking measurements. See WoodWatch.new.
 function Console:consoleWood(arg)
 	local watch = self.mod.woodWatch
 
@@ -897,7 +900,7 @@ function Console:consoleWood(arg)
 
 	watch.logDeliveries = true
 
-	return "Wood delivery logging ON (it is also on by default). Tip a tree at a sawmill you do "
-		.. "NOT own and read log.txt: one line per tree with species, litres, realised rate and "
-		.. "implied K."
+	return "Wood delivery logging ON for this session — it is OFF by default, so re-arm it after "
+		.. "every launch. Tip a tree at a sawmill you do NOT own and read log.txt: one line per "
+		.. "tree with species, litres, realised rate and implied K."
 end

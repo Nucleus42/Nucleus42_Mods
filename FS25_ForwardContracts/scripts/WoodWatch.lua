@@ -57,21 +57,22 @@ function WoodWatch.new()
 
 	self.isInstalled = false
 
-	-- ⚠ ON BY DEFAULT, DELIBERATELY, AND ONLY WHILE FORESTRY IS BEING BUILT.
+	-- OFF BY DEFAULT. Turned off 2026-08-02, once forestry was built and play-tested.
 	--
-	-- It was off by default and had to be re-armed with `fcWood` after every launch. That cost
-	-- a real measurement on 2026-08-01: a whole tree was felled, processed and sold to measure
-	-- the per-species K, and log.txt was empty because the game had been restarted in between.
-	-- **Nothing said the logging was off, and nothing could — the failure is silent by
-	-- construction.**
+	-- > It was ON through the build, deliberately, because the opposite had already cost a real
+	-- > measurement: a whole tree was felled, processed and sold to measure the per-species K,
+	-- > and log.txt was empty because the game had restarted since `fcWood` was last armed.
+	-- > **Nothing said the logging was off, and nothing could — that failure is silent by
+	-- > construction.** Defaulting ON was the fix while measurements were still being taken.
 	--
-	-- One line per TREE is nothing beside FS25's own log volume, and every line is a free K
-	-- sample on whatever the player actually cut. `fcWood off` still silences it for the
-	-- session.
+	-- **Nothing needs it any more.** Forestry settled on WOODCHIPS, which are species-blind at
+	-- the till and carry no quality axis, so no constant in the mod is derived from a K sample.
+	-- `WoodWatch` survives only as a diagnostic (FORESTRY.md §7), and a shipped mod should not
+	-- write to log.txt in normal play.
 	--
-	-- **REVISIT BEFORE RELEASE.** A shipped mod should not write to log.txt in normal play;
-	-- flip this to false once forestry's constants are settled.
-	self.logDeliveries = true
+	-- `fcWood` still arms it for the session — and the silent-failure trap above still applies,
+	-- so if you are taking measurements, re-arm it after every launch.
+	self.logDeliveries = false
 
 	return self
 end
