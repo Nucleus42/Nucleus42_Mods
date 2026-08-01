@@ -379,10 +379,10 @@ function ContractBoardFrame:describeEntry(entry)
 			return string.format("%s — %s",
 					ContractBoardFrame.speciesName(contract.speciesName),
 					g_i18n:getText("fc_entry_forestryActive")),
-				string.format("%s of %s · %d of %d planted · %s",
+				string.format("%s of %s · %d planted · %s",
 					g_i18n:formatVolume(delivered),
 					g_i18n:formatVolume(contract.quotaThisYear),
-					contract.planted or 0, contract.plantingFloor or 0,
+					contract.planted or 0,
 					daysLeft ~= nil and string.format("%d days left", math.max(daysLeft, 0))
 						or "term running")
 		end
@@ -430,9 +430,9 @@ function ContractBoardFrame:describeEntry(entry)
 				string.format("%s — %s",
 					ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
 					g_i18n:getText("fc_entry_forestry"))),
-			string.format("%s of chips · plant %d · within %.1f years · %s",
+			string.format("%s of chips · within %.1f years · %s",
 				g_i18n:formatVolume(offer.quotaTotal or 0),
-				offer.plantingFloor or 0, offer.termYears or 0, offer.client.name)
+				offer.termYears or 0, offer.client.name)
 	end
 
 	-- A PRODUCT offer shares the crop kind, unit and settlement path, so only `contractType`
@@ -830,18 +830,19 @@ function ContractBoardFrame:describeDetail(entry)
 		if ContractStore.isForestryContract(contract) then
 			local store = ForwardContracts.contractStore
 			local daysLeft = store ~= nil and store:getDaysRemaining(contract) or nil
+			-- `plantingFloor` is deliberately NOT read here. The panel reports what the player
+			-- has done, never the target — see the ruling in the offer branch.
 			local planted = contract.planted or 0
-			local floor = contract.plantingFloor or 0
 
 			return string.format("%s — forestry",
 					ContractBoardFrame.speciesName(contract.speciesName)),
 				string.format(
-					"Deliver %s of woodchips at %s per litre.\n\nDelivered: %s of %s.\nPlanted: %d of %d %s since signing.\n\n%s\n%s\nBoth must be met for the contract to complete.",
+					"Deliver %s of woodchips at %s per litre.\n\nDelivered: %s of %s.\nPlanted: %d %s since signing.\n\n%s\n%s\nThe chips must come from trees planted since signing, and enough of them.",
 					g_i18n:formatVolume(contract.quotaThisYear),
 					g_i18n:formatMoney(contract.rate, 3, true, true),
 					g_i18n:formatVolume(delivered),
 					g_i18n:formatVolume(contract.quotaThisYear),
-					planted, floor,
+					planted,
 					ContractBoardFrame.speciesName(contract.speciesName),
 					daysLeft ~= nil
 						and string.format("Deadline: %d days remaining.", math.max(daysLeft, 0))
@@ -926,6 +927,28 @@ function ContractBoardFrame:describeDetail(entry)
 	-- livestock states its own ("roughly £104,176 over the term") and a player should not have
 	-- to multiply 243,417 by 0.32 in their head to judge the deal.
 	--
+	-- > # ⛔ THE PLANTING FLOOR'S NUMBER IS NEVER SHOWN. Ruled 2026-08-02. DO NOT ADD IT BACK.
+	-- >
+	-- > It used to read *"Plant at least 4 Oak after signing."* The user's objection: the panel
+	-- > should signpost WHAT and WHEN, not hand over a worked-out plan.
+	-- >
+	-- > **And the number was never information the player needed**, because
+	-- > `plantingFloor = ceil(quotaTotal / chipsPerTree)` — it IS the quota, counted in trees.
+	-- > An oak yields 73,569 l, so a 243,417 l contract needs 3.31 trees and the floor is 4:
+	-- > anyone doing the job honestly plants 4 because 3 does not make enough chips. **The floor
+	-- > cannot fail an honest player.** It only bites someone who sourced chips elsewhere — so
+	-- > printing it told them nothing, and told a min-maxer exactly which threshold to game.
+	-- >
+	-- > The species and the timing ARE stated, because both are real terms and neither is
+	-- > derivable. The count is an implementation detail that was leaking onto the panel.
+	--
+	-- ⚠ **THE PROVENANCE LINE STATES SOMETHING THE MOD CANNOT ENFORCE, DELIBERATELY.** Chips are
+	-- species-blind at the till (§5.2) — the mod checks the PLANTING and can never check where
+	-- the litres came from. User ruling: *"this wasn't my point, it is the narrative of the mod.
+	-- Most players will play properly instead of shortcutting their way through."* The client
+	-- states a provenance clause and audits what it can, which is how a real one works. Do not
+	-- "correct" this to describe the check instead — that is what the last round removed.
+	--
 	-- **NO COVERAGE HINT, and there is no honest one to give** (FORESTRY.md §8, ruled
 	-- 2026-08-01): any land grows trees, so there is no denominator. The planting floor is the
 	-- honest number instead — it states the commitment rather than assessing the player.
@@ -934,11 +957,10 @@ function ContractBoardFrame:describeDetail(entry)
 				string.format("%s — forestry",
 					ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName))),
 			string.format(
-				"%s wants %s of woodchips within %.1f years.\n\nPlant at least %d %s after signing.\nPrice: %s per litre, locked for the whole term.\nWorth roughly %s over the term.\nSuggested buyer: %s.\n\n%s\n\nFixed terms, no negotiation.",
+				"%s wants %s of woodchips within %.1f years.\n\nThe woodchips must come from %s that you plant after signing — trees already in the ground do not count.\n\nPrice: %s per litre, locked for the whole term.\nWorth roughly %s over the term.\nSuggested buyer: %s.\n\n%s\n\nFixed terms, no negotiation.",
 				offer.client.name,
 				g_i18n:formatVolume(offer.quotaTotal or 0),
 				offer.termYears or 0,
-				offer.plantingFloor or 0,
 				ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
 				g_i18n:formatMoney(offer.rate or 0, 3, true, true),
 				g_i18n:formatMoney((offer.quotaTotal or 0) * (offer.rate or 0), 0, true, true),
@@ -1119,12 +1141,11 @@ function ContractBoardFrame:onActivateEntry()
 		end
 
 		InfoDialog.show(string.format(
-			"Contract signed with %s.\n\n%s of woodchips within %.1f years.\nRate: %s per litre, locked for the term.\n\nPlant at least %d %s from today. Trees already in the ground do not count.\n\nDeliver to %s.",
+			"Contract signed with %s.\n\n%s of woodchips within %.1f years.\nRate: %s per litre, locked for the term.\n\nThe woodchips must come from %s that you plant from today — trees already in the ground do not count.\n\nDeliver to %s.",
 			offer.client.name,
 			g_i18n:formatVolume(offer.quotaTotal or 0),
 			offer.termYears or 0,
 			g_i18n:formatMoney(offer.rate or 0, 3, true, true),
-			offer.plantingFloor or 0,
 			ContractBoardFrame.speciesName(offer.speciesTitle or offer.speciesName),
 			offer.suggestedStation or "any buyer"))
 		return
