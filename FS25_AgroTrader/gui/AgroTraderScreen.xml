@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!-- AgroTrader — the marketplace screen.
+     Filter bar across the top, results on the left, the selected machine on the right.
+
+     A standalone screen rather than a page injected into ShopMenu. Injecting is possible — it is
+     what FS25_ForwardContracts does to the ESC menu — but TabbedMenu:addPage is unusable from a
+     mod (it registers the frame's first CHILD as the page while rebuildTabList looks up the FRAME,
+     so every tab after ours maps to the wrong page), and the hand-rolled alternative breaks the
+     WHOLE SHOP if it drifts. A bottom-bar button that opens this is a table insert: the worst it
+     can do is nothing. It also gets the full canvas, which a filter bar needs.
+
+     Loaded with isFrame = false, which is what makes it a screen rather than a menu page
+     (Gui.lua:198-204).
+
+     Coordinates are 1920x1080 with y measured from the BOTTOM of the screen. Every element
+     carries an explicit size — one without defaults to filling its entire parent.
+-->
+<!-- No onCreate: ScreenElement and GuiElement do not define one, so declaring it here invites a
+     controller method that calls a nil superclass and takes the game down during map load. -->
+<GUI onOpen="onOpen" onClose="onClose">
+
+	<Bitmap profile="atScreenBg" id="screenBackground" position="0px 0px" size="1920px 1080px">
+
+		<!-- ==================================================== header -->
+		<Text profile="atTitle" id="screenTitle" text="AgroTrader" position="60px 1000px" />
+		<Text profile="atTextSmall" id="screenSubtitle" text="Used equipment marketplace"
+			position="60px 976px" size="600px 22px" />
+
+		<Text profile="atTextValue" id="balanceText" text="" position="1400px 1002px" size="460px 30px" />
+		<Text profile="atTextSmall" id="resultCountText" text="" position="1400px 976px"
+			size="460px 22px" textAlignment="right" />
+
+		<!-- ==================================================== filters -->
+		<!-- One row of six. The first three are properties of the MACHINE and prune the candidate
+		     set before any advert is generated, so they cost nothing; the last three are
+		     properties of the ADVERT and filter an already-narrowed set.
+
+		     ⚠ THERE IS NO FREE-TEXT MODEL BOX. One was here and it rendered but could not be
+		     typed into: a TextInputElement on a standalone ScreenElement needs focus routed to it,
+		     and nothing on this screen does that. Removing it let all six cyclers fit on a single
+		     row, which is tidier than the two rows it forced. If it comes back it needs
+		     FocusManager wiring, not just an element — see AgroTraderScreen:onOpen. -->
+		<Text profile="atTextSmall" id="labelType" text="TYPE" position="60px 928px" size="250px 20px" />
+		<MultiTextOption profile="atOption" id="filterType" onClick="onFilterChanged" position="60px 886px">
+			<Bitmap name="background" profile="atOptionBg" />
+			<Button name="left" profile="atOptionArrowLeft" text="&lt;" />
+			<Button name="right" profile="atOptionArrowRight" text="&gt;" />
+			<Text name="text" profile="atOptionText" />
+		</MultiTextOption>
+
+		<Text profile="atTextSmall" id="labelStyle" text="STYLE" position="330px 928px" size="250px 20px" />
+		<MultiTextOption profile="atOption" id="filterStyle" onClick="onFilterChanged" position="330px 886px">
+			<Bitmap name="background" profile="atOptionBg" />
+			<Button name="left" profile="atOptionArrowLeft" text="&lt;" />
+			<Button name="right" profile="atOptionArrowRight" text="&gt;" />
+			<Text name="text" profile="atOptionText" />
+		</MultiTextOption>
+
+		<Text profile="atTextSmall" id="labelMake" text="MAKE" position="600px 928px" size="250px 20px" />
+		<MultiTextOption profile="atOption" id="filterMake" onClick="onFilterChanged" position="600px 886px">
+			<Bitmap name="background" profile="atOptionBg" />
+			<Button name="left" profile="atOptionArrowLeft" text="&lt;" />
+			<Button name="right" profile="atOptionArrowRight" text="&gt;" />
+			<Text name="text" profile="atOptionText" />
+		</MultiTextOption>
+
+		<Text profile="atTextSmall" id="labelDistance" text="WITHIN" position="870px 928px" size="250px 20px" />
+		<MultiTextOption profile="atOption" id="filterDistance" onClick="onFilterChanged" position="870px 886px">
+			<Bitmap name="background" profile="atOptionBg" />
+			<Button name="left" profile="atOptionArrowLeft" text="&lt;" />
+			<Button name="right" profile="atOptionArrowRight" text="&gt;" />
+			<Text name="text" profile="atOptionText" />
+		</MultiTextOption>
+
+		<Text profile="atTextSmall" id="labelHours" text="MAX HOURS" position="1140px 928px" size="250px 20px" />
+		<MultiTextOption profile="atOption" id="filterHours" onClick="onFilterChanged" position="1140px 886px">
+			<Bitmap name="background" profile="atOptionBg" />
+			<Button name="left" profile="atOptionArrowLeft" text="&lt;" />
+			<Button name="right" profile="atOptionArrowRight" text="&gt;" />
+			<Text name="text" profile="atOptionText" />
+		</MultiTextOption>
+
+		<Text profile="atTextSmall" id="labelPrice" text="MAX PRICE" position="1410px 928px" size="250px 20px" />
+		<MultiTextOption profile="atOption" id="filterPrice" onClick="onFilterChanged" position="1410px 886px">
+			<Bitmap name="background" profile="atOptionBg" />
+			<Button name="left" profile="atOptionArrowLeft" text="&lt;" />
+			<Button name="right" profile="atOptionArrowRight" text="&gt;" />
+			<Text name="text" profile="atOptionText" />
+		</MultiTextOption>
+
+		<Button profile="atButtonSmall" id="resetButton" text="Reset" onClick="onClickReset" position="1700px 886px" />
+
+		<!-- ==================================================== results -->
+		<Bitmap profile="atPanel" id="listPanel" position="60px 140px" size="870px 640px">
+			<SmoothList profile="atList" id="resultsList" position="0px 0px" size="850px 640px"
+				onDoubleClick="onListDoubleClick">
+				<!-- Cell template. Children are addressed by NAME from the controller via
+				     getDescendantByName, so these names are contractual. -->
+				<ListItem profile="atListItem">
+					<Text name="cellName" profile="atListName" />
+					<Text name="cellSub" profile="atListSub" />
+					<Text name="cellPrice" profile="atListPrice" />
+					<Text name="cellDistance" profile="atListDistance" />
+				</ListItem>
+			</SmoothList>
+			<Slider profile="atListSlider" id="resultsSlider" dataElementId="resultsList" position="854px 0px" />
+		</Bitmap>
+
+		<Text profile="atTextSmall" id="emptyText" text="" position="80px 460px" size="780px 24px" />
+
+		<!-- ===================================================== detail -->
+		<Bitmap profile="atPanelRaised" id="detailPanel" position="940px 140px" size="920px 640px">
+
+			<Text profile="atText" id="detailName" text="" position="30px 588px" size="640px 34px" />
+			<Text profile="atTextSmall" id="detailBrand" text="" position="30px 562px" size="640px 22px" />
+			<Text profile="atPrice" id="detailPrice" text="" position="460px 578px" />
+
+			<Text profile="atTextSmall" id="detailStory" text="" position="30px 512px" size="860px 24px" />
+
+			<!-- Condition. Bars are a track with a fill child resized in code — see
+			     AgroTraderScreen:setBar. -->
+			<Text profile="atDetailRowLabel" id="labelHoursDetail" text="Operating hours" position="30px 450px" />
+			<Text profile="atTextValue" id="detailHours" text="" position="330px 450px" size="240px 26px" />
+
+			<Text profile="atDetailRowLabel" id="labelAge" text="Age" position="30px 414px" />
+			<Text profile="atTextValue" id="detailAge" text="" position="330px 414px" size="240px 26px" />
+
+			<Text profile="atDetailRowLabel" id="labelDamage" text="Damage" position="30px 366px" />
+			<Text profile="atTextValue" id="detailDamage" text="" position="330px 366px" size="240px 26px" />
+			<Bitmap profile="atBarTrack" id="damageTrack" position="600px 374px">
+				<Bitmap profile="atBarFill" id="damageFill" />
+			</Bitmap>
+
+			<Text profile="atDetailRowLabel" id="labelPaint" text="Paintwork" position="30px 322px" />
+			<Text profile="atTextValue" id="detailPaint" text="" position="330px 322px" size="240px 26px" />
+			<Bitmap profile="atBarTrack" id="paintTrack" position="600px 330px">
+				<Bitmap profile="atBarFill" id="paintFill" />
+			</Bitmap>
+
+			<Text profile="atDetailRowLabel" id="labelDirt" text="Cleanliness" position="30px 278px" />
+			<Text profile="atTextValue" id="detailDirt" text="" position="330px 278px" size="240px 26px" />
+
+			<!-- Money. Delivery is shown as its own line, the way the vehicle-dealer placeable
+			     already presents transport costs (VehicleShopDialog.lua:82-85). -->
+			<Text profile="atDetailRowLabel" id="labelLocation" text="Distance" position="30px 214px" />
+			<Text profile="atTextValue" id="detailLocation" text="" position="330px 214px" size="240px 26px" />
+
+			<Text profile="atDetailRowLabel" id="labelAsking" text="Asking price" position="30px 170px" />
+			<Text profile="atTextValue" id="detailAsking" text="" position="330px 170px" size="240px 26px" />
+
+			<Text profile="atDetailRowLabel" id="labelDelivery" text="Delivery" position="30px 138px" />
+			<Text profile="atTextValue" id="detailDelivery" text="" position="330px 138px" size="240px 26px" />
+
+			<Text profile="atTextAccent" id="labelTotal" text="Total" position="30px 96px" size="300px 30px" />
+			<Text profile="atPrice" id="detailTotal" text="" position="180px 92px" size="390px 34px" />
+
+			<Button profile="atButtonPrimary" id="buyButton" text="View and buy" onClick="onClickBuy"
+				position="640px 90px" size="250px 46px" />
+		</Bitmap>
+
+		<!-- ==================================================== footer -->
+		<Text profile="atTextSmall" id="footerHint" text="Everything is sold as seen."
+			position="60px 74px" size="900px 22px" />
+
+		<Button profile="atButton" id="backButton" text="Back" onClick="onClickBack"
+			position="1620px 60px" />
+
+	</Bitmap>
+</GUI>
