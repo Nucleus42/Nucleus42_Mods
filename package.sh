@@ -50,7 +50,12 @@ rm -f "$OUT"
 # not on its allow-list (.xml .lua .dds .i3d .shapes .anim .ogg .wav .gls .ogv .gdm .grle .cache),
 # and an extensionless LICENSE fails that — no rename saves it, .txt is not on the list either.
 # The licence still belongs in the public repo, so it stays in git and only the zip drops it.
-git archive --format=zip -o "$OUT" "HEAD:$MOD" -- . ':(exclude)LICENSE'
+# README.md goes the same way and for the same reason: .md is not on TestRunner's allow-list, and
+# a player never reads it — they read the mod description in game. It stays in git, where it tells
+# somebody browsing the repo what the mod is; it just does not ship. This used to be whitelisted
+# below, which put it in FS25_ForwardContracts.zip and disagreed with the top-level package.sh,
+# whose own leak check counts any .md as a leak. Changed 2026-08-02 so the two agree.
+git archive --format=zip -o "$OUT" "HEAD:$MOD" -- . ':(exclude)LICENSE' ':(exclude)README.md'
 
 # Counted from the archive, not from git ls-files, so the number cannot disagree with the zip.
 COUNT=$(unzip -Z1 "$OUT" | grep -cv '/$')
@@ -63,7 +68,7 @@ echo
 # (which carries RL's data), and icon source files. LICENSE is in here too — not because it
 # harms a player, but because TestRunner fails the whole submission over it, and the exclude
 # pathspec above is exactly the kind of thing that gets lost in a future edit.
-LEAKS=$(unzip -Z1 "$OUT" | grep -E '(^|/)(test/|.*\.md$|_source_icon|.*\.xcf$|.*\.psd$|LICENSE$)' | grep -v '^README.md$' || true)
+LEAKS=$(unzip -Z1 "$OUT" | grep -E '(^|/)(test/|.*\.md$|_source_icon|.*\.xcf$|.*\.psd$|LICENSE$)' || true)
 
 if [ -n "$LEAKS" ]; then
 	echo "❌ LEAKED FILES — do not send this zip:" >&2
