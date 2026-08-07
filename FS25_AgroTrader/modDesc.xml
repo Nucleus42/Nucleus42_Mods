@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <modDesc descVersion="111">
 	<author>Nucleus42</author>
-	<version>0.2.0.0</version>
+	<!-- Giants' TestRunner rejects any version whose first field is below 1 ("does not match schema
+	     'a.b.c.d' (with 'a' at least 1)"). Keep this in step with AgroTrader.VERSION in
+	     scripts/main.lua:10 — package.sh reads only this element for the zip's reported version. -->
+	<version>1.0.0.0</version>
 
 	<!-- English only, deliberately. "AgroTrader" is the mod's name and does not translate, and
 	     TestRunner rejects a <de> identical to the <en> as an obsolete localization. Only the
@@ -17,7 +20,11 @@ Search by type, make and model. Every listing is a real machine with its own hou
 
 Machines are listed from all over the country. The further away it is, the more the delivery costs. Some things turn up constantly; a self-propelled beet harvester might take some finding.
 
-Everything is bought as seen. No configuring, no respraying, no swapping the wheels — what is in the advert is what arrives on your yard. If you want it changed, that is what the workshop is for.]]></en>
+Everything is bought as seen. No configuring, no respraying, no swapping the wheels — what is in the advert is what arrives on your yard. If you want it changed, that is what the workshop is for.
+
+Changelog
+V1.0.0.0
+- Initial release]]></en>
 		<!-- Machine-assisted translation, informal register to match the game's own voice.
 		     NOT yet read by a native speaker — get one to look at it before this ships. -->
 		<de><![CDATA[Ein durchsuchbarer Kleinanzeigenmarkt für gebrauchte Landtechnik.
@@ -26,7 +33,11 @@ Suche nach Typ, Marke und Modell. Jedes Angebot ist eine echte Maschine mit eige
 
 Die Maschinen stehen im ganzen Land verteilt. Je weiter weg, desto teurer die Lieferung. Manches findet sich ständig; ein selbstfahrender Rübenroder kann dauern.
 
-Gekauft wie gesehen. Keine Konfiguration, keine Neulackierung, kein Reifenwechsel — was in der Anzeige steht, steht anschließend auf deinem Hof. Wer etwas ändern will, fährt in die Werkstatt.]]></de>
+Gekauft wie gesehen. Keine Konfiguration, keine Neulackierung, kein Reifenwechsel — was in der Anzeige steht, steht anschließend auf deinem Hof. Wer etwas ändern will, fährt in die Werkstatt.
+
+Changelog
+V1.0.0.0
+- Erstveröffentlichung]]></de>
 	</description>
 
 	<iconFilename>icon_AgroTrader.dds</iconFilename>

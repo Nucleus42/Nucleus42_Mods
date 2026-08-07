@@ -7,7 +7,7 @@ AgroTrader.MOD_NAME = g_currentModName
 AgroTrader.MOD_DIR = g_currentModDirectory
 -- Printed to the log on load. Keep in step with <version> in modDesc.xml — a tester reading the
 -- log against the mod list is exactly who notices when these disagree.
-AgroTrader.VERSION = "0.2.0.0"
+AgroTrader.VERSION = "1.0.0.0"
 
 -- Order matters: Market reads constants off Valuation and Rarity at call time, and Market
 -- registers its own MessageType at source time.
