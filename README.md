@@ -130,36 +130,6 @@ Farming Simulator 25. Singleplayer.
 
 ---
 
-## FS25_AutoDrive_FieldLoops
-
-Generates two-way AutoDrive ring routes around fields, so you don't have to drive every headland
-by hand.
-
-| Command | Effect |
-|---|---|
-| `adfl [offset] [spacing] [mode]` | Ring around the field you are standing in |
-| `adflAll [offset] [spacing] [mode]` | Ring around every field on the map |
-| `adflRefresh [offset] [spacing] [mode]` | Rebuild the ring for the current field |
-| `adflRemove` | Remove the ring for the current field |
-| `adflRemoveAll` | Remove every ring this mod created |
-| `adflInfo` | Report what is under you and what is generated |
-
-`mode` is either **`map`** — the surveyed field boundary, instant — or **`scan`**, which traces
-the ground you have actually ploughed. Scan is slower but picks up field extensions and merged
-fields that the surveyed boundary doesn't know about.
-
-### Requirements
-
-| | |
-| --- | --- |
-| **Farming Simulator 25** | required |
-| **[AutoDrive](https://github.com/Stephan-S/FS25_AutoDrive)** (`FS25_AutoDrive`) | **required — the mod will not work without it** |
-
-AutoDrive is the work of its own authors and is licensed separately. This repository contains
-none of its code: Field Loops reads AutoDrive's live objects at run time and ships nothing of it.
-
----
-
 ## Credits
 
 **Realistic Livestock** is the work of its own authors and is licensed separately under the
