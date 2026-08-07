@@ -49,6 +49,42 @@ The contract board is a tab in the ESC menu.
 
 ---
 
+## FS25_AgroTrader
+
+A searchable classified-ads marketplace for used machinery.
+
+The base game gives you four or five random second-hand machines on one shop tab. You cannot
+search it, you cannot filter it, and you cannot go looking for a particular tractor. AgroTrader
+is the other thing — you go hunting.
+
+Search by type, make and model. Every listing is a specific machine with its own hours, damage
+and paintwork, and an asking price worked out from all three using the game's own valuation
+maths — no invented economics. Machines are listed from all over the country, and the further
+away one is the more the delivery costs; delivery is haulage, so a heavy machine costs more to
+move than a dear one.
+
+Some things are harder to find than others. Small and medium tractors turn up constantly; a
+self-propelled beet harvester might take some finding. There is no hand-written table of what is
+rare — rarity is derived at load from the median price of whatever is actually installed, so
+mod-added machines classify themselves and nothing needs maintaining when a mod pack lands.
+
+> **Everything is bought as seen.** No configuring, no respraying, no swapping the wheels. What is
+> in the advert is what arrives on your yard. You are told the hours, the damage and the paint
+> condition; what it will cost to put right is your judgement.
+
+Open the shop and use the **AgroTrader** button in the bottom button bar.
+
+### Requirements
+
+Farming Simulator 25. No other mods required.
+
+### Status
+
+**v1.0.0.0, submitted to the ModHub and awaiting testing.** Multiplayer is implemented and
+server-authoritative but not yet proven on a real dedicated server.
+
+---
+
 ## FS25_SubsoilerTillage
 
 Lets subsoilers do the plough's job.

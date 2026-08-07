@@ -29,10 +29,25 @@ in the advert is what arrives on your yard. If you want it changed, that is what
 for. And you are told the hours, the damage and the paint condition — what it will cost to put
 right is your judgement, not ours.
 
+## Requirements
+
+Farming Simulator 25. No other mods required.
+
+## Installing
+
+Place the zipped `FS25_AgroTrader` folder into your `Documents/My Games/FarmingSimulator2025/mods`
+folder and enable it in the in-game mod list.
+
+Open the shop and use the **AgroTrader** button in the bottom button bar.
+
 ## Status
 
-Work in progress. Rarity model complete and verified; listing generation, pricing, the search
-screen and the buy flow are still being built.
+**v1.0.0.0, submitted to the ModHub and awaiting testing.** Complete and played in singleplayer.
+
+Multiplayer is implemented and server-authoritative — the market is derived rather than streamed, so
+every client rebuilds the same list from a shared salt, and the server regenerates a listing from
+its key on purchase rather than trusting anything a client sends. It has **not yet been proven on a
+real dedicated server**. Back up your saves.
 
 ## How rarity works
 
