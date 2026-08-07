@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <modDesc descVersion="111">
 	<author>Nucleus42</author>
-	<!-- Giants' TestRunner rejects any version whose first field is below 1 ("does not match schema
-	     'a.b.c.d' (with 'a' at least 1)"). Keep this in step with AgroTrader.VERSION in
-	     scripts/main.lua:10 — package.sh reads only this element for the zip's reported version. -->
 	<version>1.0.0.0</version>
 
-	<!-- English only, deliberately. "AgroTrader" is the mod's name and does not translate, and
-	     TestRunner rejects a <de> identical to the <en> as an obsolete localization. Only the
-	     description needs a German entry. Do not re-add <de> here. -->
 	<title>
 		<en>AgroTrader</en>
 	</title>
@@ -20,45 +14,18 @@ Search by type, make and model. Every listing is a real machine with its own hou
 
 Machines are listed from all over the country. The further away it is, the more the delivery costs. Some things turn up constantly; a self-propelled beet harvester might take some finding.
 
-Everything is bought as seen. No configuring, no respraying, no swapping the wheels — what is in the advert is what arrives on your yard. If you want it changed, that is what the workshop is for.
-
-Changelog
-V1.0.0.0
-- Initial release]]></en>
-		<!-- Machine-assisted translation, informal register to match the game's own voice.
-		     NOT yet read by a native speaker — get one to look at it before this ships. -->
+Everything is bought as seen. No configuring, no respraying, no swapping the wheels — what is in the advert is what arrives on your yard. If you want it changed, that is what the workshop is for.]]></en>
 		<de><![CDATA[Ein durchsuchbarer Kleinanzeigenmarkt für gebrauchte Landtechnik.
 
 Suche nach Typ, Marke und Modell. Jedes Angebot ist eine echte Maschine mit eigenen Betriebsstunden, eigenem Zustand und eigener Lackierung — und einem Preis, der sich aus allen dreien ergibt.
 
 Die Maschinen stehen im ganzen Land verteilt. Je weiter weg, desto teurer die Lieferung. Manches findet sich ständig; ein selbstfahrender Rübenroder kann dauern.
 
-Gekauft wie gesehen. Keine Konfiguration, keine Neulackierung, kein Reifenwechsel — was in der Anzeige steht, steht anschließend auf deinem Hof. Wer etwas ändern will, fährt in die Werkstatt.
-
-Changelog
-V1.0.0.0
-- Erstveröffentlichung]]></de>
+Gekauft wie gesehen. Keine Konfiguration, keine Neulackierung, kein Reifenwechsel — was in der Anzeige steht, steht anschließend auf deinem Hof. Wer etwas ändern will, fährt in die Werkstatt.]]></de>
 	</description>
 
 	<iconFilename>icon_AgroTrader.dds</iconFilename>
 
-	<!-- ⚠ IMPLEMENTED BUT NOT YET PROVEN IN A REAL SESSION. Enabled so it CAN be tested — the game
-	     refuses multiplayer for unzipped mods regardless (scripts/mods.lua:661), so this needs a
-	     built zip, a dedicated server and two clients before it should be trusted.
-
-	     What was wrong, and is now handled: BuyVehicleData streams a sale item as a single byte id
-	     looked up in vanilla's own vehicleSaleSystem. Our adverts are derived and have no such id,
-	     so a server resolved the sale item to nil, charged FULL LIST PRICE for a BRAND NEW machine
-	     — about 29x the advertised figure on the worked example — and left the advert standing.
-	     Singleplayer never showed it because a local connection runs the event without
-	     serialising, so the table survives by reference.
-
-	     The advert key now travels alongside vanilla's byte and the SERVER REGENERATES the advert
-	     from its own salt and clock, so nothing about hours, condition or price is taken from the
-	     wire. A key that does not resolve fails isValid and is refused outright.
-
-	     Test plan and the remaining risks are in MULTIPLAYER.md. If anything there fails, set this
-	     back to false rather than shipping it. -->
 	<multiplayer supported="true" />
 
 	<extraSourceFiles>

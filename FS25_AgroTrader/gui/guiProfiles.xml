@@ -1,46 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
-<!-- ============================================================================================
-     AGROTRADER PALETTE
-
-     ############################################################################################
-     READ THIS BEFORE CHANGING ANY COLOUR VALUE IN THIS FILE.
-
-     imageColor and textColor are LINEAR. The engine gamma-encodes them on output, so a value is
-     roughly SQUARE-ROOTED on its way to the screen: 0.05 arrives at about 0.25. Author a colour
-     by eye here and it renders far lighter, far flatter and far louder than intended.
-
-     This was learned the expensive way. The first version of this file was written with sRGB
-     values straight into these fields, and in game the surfaces washed out to grey and the green
-     accent came out fluorescent — "the green overdoes everything else". Nothing was wrong with
-     the layout; every colour was simply about twice as bright as written.
-
-     SO: choose the colour in sRGB (hex), then convert before writing it here.
-       linear = c/12.92                  if c <= 0.04045
-       linear = ((c + 0.055)/1.055)^2.4  otherwise      ... with c = hex_channel/255
-
-     THE TONE LADDER — sRGB intent on the left, linear value actually written on the right:
-
-       screen bg       #0E1116   0.004391 0.005605 0.008023   near-black slate, the canvas
-       panel           #161A21   0.008023 0.010330 0.015209   a section's backing plate
-       panel raised    #1D222B   0.012286 0.015996 0.024158   the detail card, one step up
-       input / recess  #101319   0.005182 0.006512 0.009721   DARKER than buttons on purpose —
-                                                              an empty box should recede
-       button idle     #262D38   0.019382 0.026241 0.039546
-       button hover    #39434F   0.040915 0.056128 0.078187
-       button primary  #2F5A22   0.028426 0.102242 0.015996   deep green, not the accent
-       primary hover   #3F7A2E   0.049707 0.194618 0.027321
-       accent green    #7CB342   0.201556 0.450786 0.054480   USE SPARINGLY — prices and the
-                                                              selected row, nothing else
-       text primary    #DDE3EA   0.723055 0.768151 0.822786
-       text muted      #7E8894   0.208637 0.246201 0.296138
-
-     Text colours are SOLID (alpha 1) and tinted rather than faded. Do not reintroduce alpha on
-     text to dim it — use a dimmer colour instead, or it reads as haze.
-     ============================================================================================
--->
 <GuiProfiles>
-
-	<!-- ============================================================ structure -->
 
 	<Profile name="atScreenBg" extends="baseReference">
 		<imageColor value="0.004391 0.005605 0.008023 1" />
@@ -54,12 +13,6 @@
 		<imageColor value="0.012286 0.015996 0.024158 1" />
 	</Profile>
 
-	<!-- ================================================================= text -->
-
-	<!-- ⚠ EVERY TEXT PROFILE CARRIES AN EXPLICIT SIZE, AND MUST.
-	     A GuiElement with no size defaults to {1,1}, which fills its ENTIRE parent
-	     (GuiElement.lua:156). A bare <Text> becomes a full-page box and its text renders wherever
-	     alignment lands inside that box, ignoring the position you set. -->
 	<Profile name="atText" extends="baseReference">
 		<size value="600px 30px" />
 		<textColor value="0.723055 0.768151 0.822786 1" />
@@ -97,13 +50,6 @@
 		<textAlignment value="right" />
 	</Profile>
 
-	<!-- ============================================================== buttons -->
-
-	<!-- ⚠ STATE COLOUR KEYS: THE SUFFIX GOES BEFORE "Color", NOT AFTER.
-	       CORRECT   imageSelectedColor  imageHighlightedColor  imageFocusedColor
-	       WRONG     imageColorSelected  textColorHighlighted   (silently ignored)
-	     GuiOverlay.loadProfileColors builds the key as `overlayName .. stateName .. "Color"` and
-	     skips anything it does not recognise — no error, no warning, no effect. -->
 	<Profile name="atButton" extends="baseReference">
 		<size value="240px 46px" />
 		<textSize value="18px" />
@@ -129,19 +75,6 @@
 		<textSize value="16px" />
 	</Profile>
 
-	<!-- ============================================================== filters -->
-
-	<!-- ⚠ A MultiTextOption BUILDS NOTHING BY ITSELF UNLESS ITS PROFILE SUPPLIES THE DEFAULTS.
-	     MultiTextOptionElement:addDefaultElements only creates the left/right buttons and the text
-	     from defaultProfileButtonLeft / defaultProfileButtonRight / defaultProfileText
-	     (MultiTextOptionElement.lua:215-255). A profile extending baseReference sets none of
-	     those, so the control renders NOTHING and cannot be clicked — which is exactly what
-	     happened: six labels with empty space under them.
-
-	     Rather than rely on those undocumented profile fields, the screen XML supplies the
-	     children explicitly. setElementsByName binds them by element NAME — "left", "right",
-	     "text", "background" (MultiTextOptionElement.lua:163-213) — so those names are
-	     CONTRACTUAL. Renaming one silently disables that part of the control. -->
 	<Profile name="atOption" extends="baseReference">
 		<size value="250px 40px" />
 	</Profile>
@@ -152,9 +85,6 @@
 	</Profile>
 
 	<Profile name="atOptionText" extends="baseReference">
-		<!-- 100% height rather than a fixed pixel value, so the text centres on whatever height
-		     the control actually ends up — a fixed height leaves it sitting under the plate,
-		     because the origin is bottom-left. -->
 		<size value="182px 100%" />
 		<position value="34px 0px" />
 		<textSize value="17px" />
@@ -180,13 +110,6 @@
 		<position value="216px 0px" />
 	</Profile>
 
-	<!-- ⚠ TWO SEPARATE TEXT-INPUT TRAPS, BOTH FATAL, BOTH SILENT:
-	     1. maxInputTextWidth is REQUIRED even for left-aligned text. TextInputElement:draw()
-	        unconditionally computes (self.size[1] - self.maxInputTextWidth) / 2 regardless of
-	        alignment, so without it every draw throws and spams the log each frame.
-	     2. A TextInput draws NO background of its own — it extends ButtonElement, whose only
-	        background is GuiOverlay.renderOverlay, a no-op unless overlay.filename resolves to a
-	        real image. Hence the nested <Bitmap> in the screen XML. -->
 	<Profile name="atSearchBox" extends="baseReference">
 		<size value="320px 40px" />
 		<textSize value="17px" />
@@ -202,19 +125,11 @@
 		<imageColor value="0.005182 0.006512 0.009721 1" />
 	</Profile>
 
-	<!-- ================================================================ list -->
-
 	<Profile name="atList" extends="baseReference">
 		<size value="850px 620px" />
 		<listItemSpacing value="2px" />
 	</Profile>
 
-	<!-- ⚠ EXTEND fs25_subCategoryListItem AND OVERRIDE SIZE AND STATE COLOURS ONLY.
-	     It carries the selection and scrolling behaviour a SmoothList expects, which is why the
-	     row is not rebuilt from baseReference. But its stock SELECTED graphic is the shop's bright
-	     green category tile, complete with a pointer — at 820px wide that filled the row and was
-	     the loudest thing on screen. Overriding imageSelectedColor tints it back to something that
-	     reads as a highlight rather than a billboard. -->
 	<Profile name="atListItem" extends="fs25_subCategoryListItem">
 		<size value="850px 54px" />
 		<imageColor value="0.008023 0.010330 0.015209 1" />
@@ -222,12 +137,6 @@
 		<imageSelectedColor value="0.028426 0.102242 0.015996 1" />
 	</Profile>
 
-	<!-- ⚠ ROW TEXT EXTENDS baseReference, NOT A VANILLA LIST-ITEM TEXT PROFILE.
-	     The vanilla ones are narrow, uppercase, wrapping sidebar labels sized to the dark plate
-	     inside the row graphic; overriding their geometry does not widen them, the text stays
-	     boxed into the plate and wraps mid-word.
-	     Heights are 100%, not fixed pixels: the row keeps the base graphic's own height rather
-	     than our override, and a fixed height leaves text under the plate (bottom-left origin). -->
 	<Profile name="atListName" extends="baseReference">
 		<size value="420px 100%" />
 		<position value="18px 12px" />
@@ -269,8 +178,6 @@
 		<size value="10px 620px" />
 		<imageColor value="0.019382 0.026241 0.039546 1" />
 	</Profile>
-
-	<!-- ============================================================== detail -->
 
 	<Profile name="atDetailRowLabel" extends="atTextSmall">
 		<size value="300px 26px" />
