@@ -17,9 +17,11 @@ the two: every tree the contract counts gets a marker above it, visible across t
 that are off-screen get an arrow at the edge of the screen pointing the way. A readout shows how many
 are left and how far the nearest one is.
 
-Only trees belonging to a contract you are actually running are marked, and a tree's marker disappears
-the moment you finish the cut. Trees that merely look dead, and normal trees standing among them, are
-ignored — the tree list comes from the contract itself, not guessed from the tree.
+Only trees belonging to a deadwood contract you are actually running are marked, and a tree's marker
+disappears the moment you finish the cut. Trees that merely look dead, and normal trees standing among
+them, are ignored — the tree list comes from the contract itself, not guessed from the tree. Wood
+transport contracts are never marked, whether their logs are on the ground or already on your trailer,
+so you can run one alongside a deadwood contract and still only see the trees you have to cut.
 
 Multiplayer supported: markers are drawn locally for each player, and everyone in the farm that holds
 the contract sees them. Nothing is sent over the network.

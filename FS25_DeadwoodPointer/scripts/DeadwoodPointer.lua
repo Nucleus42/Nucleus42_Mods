@@ -31,8 +31,8 @@
 -- trust the result themselves -- addTreeMarker() (:468) feeds tree.splitShapeId straight into the
 -- tree marker system once resolution completes.
 --
--- THREE TRAPS. The first two were confirmed by diffing savegame missions.xml across one chainsaw cut;
--- the third came out of the multiplayer research.
+-- FOUR TRAPS. The first two were confirmed by diffing savegame missions.xml across one chainsaw cut;
+-- the third came out of the multiplayer research; the fourth out of a v1.0.0.0 bug report.
 --
 --   1. A felled tree STAYS mission-owned. Cutting one turned its <deadTree> entry into
 --      cutDown="true" and added two <cutSplitShape> entries (the stump and the trunk), still
@@ -48,6 +48,9 @@
 --      readUpdateStream (:238). A client connected when the contract started sees cutDown=false
 --      forever. getIsSplitShapeSplit is the authoritative "still standing" signal on BOTH sides
 --      because it reads synchronised scene state; cutDown is only ever a cheap skip.
+--
+--   4. getIsMissionSplitShape does NOT mean "deadwood contract". TreeTransportMission defines it too
+--      (TreeTransportMission.lua:663). Match the contract by name -- see missionIsDeadwood.
 --
 -- Felling is the completion trigger -- completion moved to exactly 1/numTrees the instant the cut
 -- finished, trunk left lying. So a marker must vanish on the cut, which the split test gives us free.
@@ -284,6 +287,32 @@ local function collectFromDeadTrees(mission, out)
     return true
 end
 
+-- Is this specifically a DEADWOOD contract? Match on the type name, never on getIsMissionSplitShape.
+--
+-- Trap 4: getIsMissionSplitShape is NOT a deadwood tell. TreeTransportMission defines it too
+-- (TreeTransportMission.lua:663), answering true for every log in its own treeShapeToTree. That is
+-- what broke v1.0.0.0: a wood-transport contract passed the duck-type, had none of the tables the
+-- scan could read, and so tripped the scene-graph fallback -- which then marked the transport logs
+-- and kept marking them onto the player's trailer. The fallback is gone, but the duck-type would
+-- still count a transport contract as one of ours, and it collects nothing today only because
+-- TreeTransportMission happens to have no deadTrees field. Exclude it by name instead of by luck.
+--
+-- getMissionTypeName is defined on both forestry classes (DeadwoodMission.lua:643,
+-- TreeTransportMission.lua:697) and just returns the NAME constant, so it is safe on client and
+-- server alike. Do NOT key on mission.type.typeId -- ids are assigned in registration order
+-- (MissionManager.lua:497-505) and shift as soon as anything registers a new mission type.
+local function missionIsDeadwood(mission)
+    if mission.getMissionTypeName ~= nil then
+        local ok, name = pcall(mission.getMissionTypeName, mission)
+        if ok then
+            return name == "deadwoodMission"
+        end
+    end
+    -- Only if that method is ever missing. deadTrees exists on DeadwoodMission and nowhere else in
+    -- the whole game source, so it is a sound second choice.
+    return type(mission.deadTrees) == "table"
+end
+
 function DeadwoodPointer.rescan()
     dwp.targets = {}
     dwp.lastScanNodes = 0
@@ -296,9 +325,7 @@ function DeadwoodPointer.rescan()
 
     local out = {}
     for _, mission in ipairs(mm.missions) do
-        -- getIsMissionSplitShape is a duck-type for "this mission type owns trees". We never CALL it
-        -- (it is server-only in effect) -- its presence just tells us the mission is a forestry one.
-        if type(mission) == "table" and mission.getIsMissionSplitShape ~= nil and missionIsOurs(mission) then
+        if type(mission) == "table" and missionIsDeadwood(mission) and missionIsOurs(mission) then
             dwp.lastScanMissions = dwp.lastScanMissions + 1
             pcall(collectFromDeadTrees, mission, out)
         end
@@ -613,9 +640,11 @@ function DeadwoodPointer:consoleDebug()
                 local ok, n = pcall(m.getMissionTypeName, m)
                 if ok then typeName = tostring(n) end
             end
-            add("mission[%d] type=%s status=%s farmId=%s completion=%s ours=%s",
+            -- deadwood= is what decides whether the scan reads this contract at all. A forestry
+            -- contract with deadwood=false is a wood-transport one and is correctly skipped.
+            add("mission[%d] type=%s status=%s farmId=%s completion=%s deadwood=%s ours=%s",
                 i, typeName, tostring(m.status), tostring(m.farmId), tostring(m.completion),
-                tostring(missionIsOurs(m)))
+                tostring(missionIsDeadwood(m)), tostring(missionIsOurs(m)))
             if m.getIsMissionSplitShape ~= nil then
                 -- The multiplayer tell. On a client shapeMapEmpty is ALWAYS true and pendingIds
                 -- counts trees whose server id has not resolved into a local node yet.
