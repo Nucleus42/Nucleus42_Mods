@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <modDesc descVersion="108">
     <author>m.p.tetlow</author>
-    <version>1.1.0.0</version>
+    <version>1.1.1.0</version>
 
     <title>
         <en><![CDATA[Deadwood Tree Pointer]]></en>
@@ -26,7 +26,7 @@ so you can run one alongside a deadwood contract and still only see the trees yo
 Multiplayer supported: markers are drawn locally for each player, and everyone in the farm that holds
 the contract sees them. Nothing is sent over the network.
 
-Toggle with Ctrl+D.
+Toggle with F7, rebindable in Options > Controls.
         ]]></en>
     </description>
 
@@ -42,8 +42,30 @@ Toggle with Ctrl+D.
 
     <actions>
         <action name="DWPOINTER_TOGGLE" category="ONFOOT VEHICLE"
-                axisType="HALF" ignoreComboMask="false">
-            <binding device="KB_MOUSE_DEFAULT" input="KEY_lctrl KEY_d" />
-        </action>
+                axisType="HALF" ignoreComboMask="false" />
     </actions>
+
+    <!--
+        The default key MUST live here, NOT as a nested binding element inside the action element.
+        mods.lua registers the two on separate schema paths: modDesc.actions.action(?) carries only
+        attributes (mods.lua:1118-1122), while the key is
+        modDesc.inputBinding.actionBinding(?).binding(?) (mods.lua:1123-1129).
+
+        XML outside the schema is discarded in silence, so nesting the binding inside the action
+        looks right, validates, loads, and registers the action, then simply ships with no key
+        attached. Every version up to 1.1.0.0 did exactly that: the action appeared in
+        Options / Controls under the mod's name with nothing bound to it.
+
+        The key is F7, not Ctrl+D as originally intended. KEY_lctrl KEY_d is already the vanilla
+        AXIS_CRANE_SUPPORT binding, and lctrl on its own is crouch. F7 takes no modifier, so no
+        combo mask applies to it.
+
+        A key already in the player's own inputBinding.xml always wins over this default, so anyone
+        who bound the action by hand while it shipped unbound keeps their key.
+    -->
+    <inputBinding>
+        <actionBinding action="DWPOINTER_TOGGLE">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f7" />
+        </actionBinding>
+    </inputBinding>
 </modDesc>
