@@ -5,43 +5,57 @@
 -- ============================================================================
 -- HOW A TREE IS IDENTIFIED (this is the whole mod; everything else is presentation)
 --
--- The engine already knows which trees belong to a contract, so we ask it rather than reimplementing
--- the contract's geometry:
+-- Ask the mission which shapes are ITS trees. Do NOT ask the engine which mission owns a shape.
+-- All line references below are D:\FS25_GameSource (full decompiled source, snapshot 1.21.0.0).
 --
---     g_missionManager:getMissionBySplitShape(node)      -- MissionManager.lua:770, unstripped SDK
+--     for each RUNNING mission owned by our farm
+--         for each tree in mission.deadTrees
+--             take tree.splitShapeId if it is a live, standing split shape
 --
--- It loops the mission list calling mission:getIsMissionSplitShape(shape). That is map-agnostic: it
--- works on base maps, DLC maps and third-party maps identically, because it never reads map data.
--- The alternative (resolve the contract's spotIndex against <map>.xml -> missions/deadwoodSpots.i3d,
--- read each spot's translation + "radius" user attribute, then test distance) works too, but DLC and
--- mod maps ship those i3ds inside packed archives, so it can't be relied on. Kept as a note only.
+-- WHY NOT g_missionManager:getMissionBySplitShape(node)  (MissionManager.lua:537)
 --
--- TWO TRAPS, both confirmed by diffing savegame missions.xml before/after felling one tree:
+-- Because it is server-only in effect, and fails SILENTLY on a multiplayer client. It delegates to
+-- DeadwoodMission:getIsMissionSplitShape (DeadwoodMission.lua:499), which answers purely from
+-- self.deadTreeShapeToTree and self.deadTreeCutSplitShapes. Every write to those two tables is
+-- server-side -- :312 and :324 (inside `if self.isServer`), :426 (addMissionTree, reachable only via
+-- MissionManager:startMission which asserts server at MissionManager.lua:319), and :600/:606 (inside
+-- onTreeShapeCut's `if self.isServer`). They are initialised empty at :40-41 and the client sync path
+-- readDeadTreesStream (:246) fills ONLY self.deadTrees. So on a client both maps stay empty forever,
+-- getIsMissionSplitShape always returns false, and the lookup returns nil for every tree: no markers,
+-- no error, no log line. v1.0.0.0 shipped with exactly that bug.
+--
+-- mission.deadTrees, by contrast, IS synced -- via writeStream/readStream (:204/:215) and
+-- DeadwoodMissionTreeEvent, broadcast from prepare() at :436. Client entries arrive as
+-- {cutDown, splitShapeId}, or carrying serverSplitShapePart1/2 when the shape is not resolvable yet;
+-- update() at :337-357 then resolves those into local node ids with resolveStreamSplitShapeId. Giants
+-- trust the result themselves -- addTreeMarker() (:468) feeds tree.splitShapeId straight into the
+-- tree marker system once resolution completes.
+--
+-- THREE TRAPS. The first two were confirmed by diffing savegame missions.xml across one chainsaw cut;
+-- the third came out of the multiplayer research.
 --
 --   1. A felled tree STAYS mission-owned. Cutting one turned its <deadTree> entry into
 --      cutDown="true" and added two <cutSplitShape> entries (the stump and the trunk), still
---      registered to the mission. So getMissionBySplitShape alone keeps returning a mission for wood
---      the player has already dealt with. `not getIsSplitShapeSplit(node)` is what excludes it --
---      that is Giants' own standing-uncut-tree test (TreePlantManager.lua:1250).
+--      registered to the mission. `not getIsSplitShapeSplit(node)` is what excludes them -- Giants'
+--      own standing-uncut-tree test (TreePlantManager.lua:1250).
 --
 --   2. The mission list includes the UNACCEPTED pool. Filter on status == RUNNING and a matching
---      farmId, or you will mark trees for contracts nobody has taken.
+--      farmId, or you will mark trees for contracts nobody has taken. Note farmId is only synced once
+--      a mission has started (AbstractMission.lua:164-166), so it is nil on clients for the pool.
 --
--- Completion moved to exactly 1/numTrees the instant the chainsaw cut completed -- felling is the
--- trigger, not removal or delivery. So a marker must vanish on the cut, which the split test gives
--- us for free.
+--   3. tree.cutDown is NEVER updated on a client. onTreeShapeCut mutates it only under
+--      `if self.isServer` (:594) and no event carries per-tree cut state -- only numCutDownTrees, via
+--      readUpdateStream (:238). A client connected when the contract started sees cutDown=false
+--      forever. getIsSplitShapeSplit is the authoritative "still standing" signal on BOTH sides
+--      because it reads synchronised scene state; cutDown is only ever a cheap skip.
 --
--- ENUMERATION is two-tier. There is no Lua-enumerable registry of split shapes, and overlapSphere is
--- bounded by a radius around the player -- useless here, because the contract site is routinely
--- hundreds of metres away and the whole point is to guide you TO it.
+-- Felling is the completion trigger -- completion moved to exactly 1/numTrees the instant the cut
+-- finished, trunk left lying. So a marker must vanish on the cut, which the split test gives us free.
 --
---   Fast path: read mission.deadTrees directly (structure recovered via dwDebug -- see the block
---              above scanFromMissions). Measured at 25 candidates examined.
---   Fallback:  recurse the scene graph from getRootNode(). Measured at ~322,000 nodes on a loaded
---              map -- about 13,000x more work -- so it is a safety net, not the normal route.
---
--- Either way the scan runs only when the running-mission signature changes (accepting a contract,
--- felling a tree) plus a slow safety net -- never per frame.
+-- ENUMERATION is a handful of table reads. Earlier versions fell back to recursing the scene graph
+-- from getRootNode() (~322,000 nodes on a loaded map); that is gone, because it could only ever
+-- identify trees via the same dead getMissionBySplitShape call. The scan runs only when the
+-- running-mission signature changes -- never per frame.
 -- ============================================================================
 
 DeadwoodPointer = {}
@@ -52,13 +66,12 @@ dwp.targets = {}                 -- array of split-shape node ids, still standin
 dwp.lastSignature = nil
 dwp.sigTimer = 0
 dwp.safetyTimer = 0
-dwp.lastScanNodes = 0            -- diagnostics for dwDebug
-dwp.lastScanMode = "none"        -- 'mission' (fast path) or 'walk' (fallback)
+dwp.lastScanNodes = 0            -- diagnostics for dwDebug: candidate ids examined
+dwp.lastScanMissions = 0         -- diagnostics for dwDebug: contracts of ours found
 dwp.actionEventId = nil
 
 dwp.SIG_INTERVAL = 500           -- ms between cheap "did anything change" checks
 dwp.SAFETY_INTERVAL = 30000      -- ms; full rescan even if nothing looked like it changed
-dwp.MAX_DEPTH = 24               -- scene-graph recursion guard
 
 dwp.Y_OFFSET = 2.2               -- lift the marker clear of the trunk and the brush around its base
 dwp.BASE_FONT_SIZE = 1.1
@@ -151,7 +164,14 @@ end
 -- Contract ownership
 -- ============================================================================
 
+-- g_localPlayer.farmId, not g_currentMission:getFarmId(). This is what Giants themselves use for
+-- this exact mission's client-side hotspot check (DeadwoodMission.lua:384), and it is the one that
+-- gets farm MEMBERS right in multiplayer -- the contract belongs to a farm, and everyone in that farm
+-- should see the markers.
 local function playerFarmId()
+    if g_localPlayer ~= nil and g_localPlayer.farmId ~= nil then
+        return g_localPlayer.farmId
+    end
     if g_currentMission == nil then
         return nil
     end
@@ -164,8 +184,8 @@ local function playerFarmId()
     return g_currentMission.playerFarmId
 end
 
--- Is this a mission we are actually running? getMissionBySplitShape happily returns unaccepted
--- pool missions, which have no farmId at all.
+-- Is this a mission we are actually running? Trap 2: the mission list carries the unaccepted pool,
+-- whose entries have no farmId at all (it is only streamed once a mission has started).
 local function missionIsOurs(mission)
     if mission == nil then
         return false
@@ -183,38 +203,39 @@ local function missionIsOurs(mission)
     return true
 end
 
--- Returns the owning mission if `node` is a standing, uncut, contract-owned tree; else nil.
-local function contractTreeMission(node)
-    if node == nil or node == 0 then
-        return nil
+-- Is `node` a live, standing, uncut split shape? Purely physical -- no mission lookup.
+--
+-- Ownership is NOT tested here, and does not need to be: the caller got this id out of a mission it
+-- has already checked, so ownership comes from provenance. That is stronger than the reverse lookup
+-- this replaces, which could fail (and on a client always did).
+--
+-- All five natives are client-safe. PlayerHUDUpdater:showSplitShapeInfo (PlayerHUDUpdater.lua:170-181)
+-- uses four of them together in code that by definition only runs where there is a screen, and gates
+-- the one genuinely server-only line separately at :200.
+local function isStandingTree(node)
+    if type(node) ~= "number" or node == 0 then
+        return false
     end
-    -- The fast path feeds arbitrary numbers in here (counts, indices, ids), so prove it's a live
-    -- entity before asking the engine anything else about it.
+    -- Ids can be stale: a shape can be cut or deleted between scans, and on a client an id is only
+    -- valid once resolveStreamSplitShapeId has run. Prove it is a live entity before asking anything.
     if entityExists ~= nil then
         local ok, exists = pcall(entityExists, node)
         if not ok or not exists then
-            return nil
+            return false
         end
     end
     if getHasClassId == nil or ClassIds == nil or not getHasClassId(node, ClassIds.MESH_SPLIT_SHAPE) then
-        return nil
+        return false
     end
     if getSplitType == nil or getSplitType(node) == 0 then
-        return nil
+        return false
     end
     -- Trap 1: a felled tree and its stump stay mission-owned. Only standing wood is still a target.
+    -- Trap 3: on a client this is the ONLY reliable "still standing" signal -- cutDown never updates.
     if getIsSplitShapeSplit ~= nil and getIsSplitShapeSplit(node) then
-        return nil
+        return false
     end
-    local mm = g_missionManager
-    if mm == nil or mm.getMissionBySplitShape == nil then
-        return nil
-    end
-    local ok, mission = pcall(mm.getMissionBySplitShape, mm, node)
-    if not ok then
-        return nil
-    end
-    return mission
+    return true
 end
 
 -- ============================================================================
@@ -222,27 +243,25 @@ end
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- Fast path: read the mission's own tree list.
+-- Read the mission's own tree list. Confirmed shape, from dumping a live mission and from
+-- DeadwoodMission.lua:
 --
--- DeadwoodMission is stripped from the SDK dump, so this structure was recovered by dumping a live
--- mission with dwDebug. Confirmed shape:
+--   SERVER / singleplayer            mission.deadTrees[i] =
+--       { cutDown = false, rootNode = 506632, splitShapeId = 506633, x = 724, z = 508, rotY = -0.53 }
+--       { cutDown = true }                   -- felled: every other field dropped
 --
---   mission.deadTrees = {                        -- array, one entry per required tree
---       [1] = { cutDown = false, rootNode = 506632, splitShapeId = 506633,
---               x = 724, z = 508, rotY = -0.53 },
---       [2] = { cutDown = true },                -- felled: EVERY other field is dropped
---       ...
---   }
---   mission.deadTreeShapeToTree      -- splitShapeId -> the same tree table; only uncut trees
---   mission.deadTreeCutSplitShapes   -- id -> true, for the pieces a felled tree broke into
---   mission.numDeadTrees / numCutDownTrees / wronglyCutDownTreesReward
+--   CLIENT (built by readDeadTreesStream, DeadwoodMission.lua:246)
+--       { cutDown = false, splitShapeId = 506633 }
+--       { cutDown = false, serverSplitShapePart1 = .., serverSplitShapePart2 = .. }
+--                                            -- not resolved YET; splitShapeId is nil until
+--                                            --   update() resolves it (:337-357)
 --
--- Note there is no `y` on a tree entry, only x/z, so world position still comes from the node.
+-- So a client entry is a strict subset: no rootNode, no x/z/rotY, and splitShapeId may be nil for
+-- some frames after joining. We only ever read splitShapeId, and we get world position from the node
+-- rather than from x/z, so the same code serves both sides.
 --
--- Cheap: a contract has a handful of trees, versus ~322,000 nodes for the scene-graph walk that this
--- replaces. The walk survives as a fallback in rescan() in case a patch renames these fields.
--- Every candidate still goes through contractTreeMission(), so a stale or reused id cannot produce a
--- marker on something that is not a standing, mission-owned tree.
+-- deadTreeShapeToTree and deadTreeCutSplitShapes are deliberately NOT read: they are empty on clients
+-- (see the header). numDeadTrees / numCutDownTrees / wronglyCutDownTreesReward are synced but unused.
 -- ---------------------------------------------------------------------------
 
 local function collectFromDeadTrees(mission, out)
@@ -250,132 +269,77 @@ local function collectFromDeadTrees(mission, out)
     if type(trees) ~= "table" then
         return false
     end
-    local sawList = false
     for _, tree in pairs(trees) do
         if type(tree) == "table" then
-            sawList = true
-            -- cutDown entries carry no splitShapeId at all, so this is belt and braces.
+            -- cutDown is authoritative on the server and stale-false on clients (trap 3), so it is
+            -- only a cheap skip -- isStandingTree is what actually decides.
             if tree.cutDown ~= true and type(tree.splitShapeId) == "number" then
                 dwp.lastScanNodes = dwp.lastScanNodes + 1
-                if contractTreeMission(tree.splitShapeId) == mission then
+                if isStandingTree(tree.splitShapeId) then
                     out[#out + 1] = tree.splitShapeId
                 end
             end
         end
     end
-    return sawList
-end
-
--- Secondary: the shape->tree map is keyed by splitShapeId and only holds uncut trees, so its keys
--- are already the answer. Used if deadTrees is absent or unreadable.
-local function collectFromShapeMap(mission, out)
-    local map = mission.deadTreeShapeToTree
-    if type(map) ~= "table" then
-        return false
-    end
-    local sawMap = false
-    for shapeId in pairs(map) do
-        if type(shapeId) == "number" then
-            sawMap = true
-            dwp.lastScanNodes = dwp.lastScanNodes + 1
-            if contractTreeMission(shapeId) == mission then
-                out[#out + 1] = shapeId
-            end
-        end
-    end
-    return sawMap
-end
-
-local function scanFromMissions(out)
-    local mm = g_missionManager
-    if mm == nil or type(mm.missions) ~= "table" then
-        return false
-    end
-
-    local anyOwner, anyReadable = false, false
-
-    for _, mission in ipairs(mm.missions) do
-        if type(mission) == "table" and mission.getIsMissionSplitShape ~= nil and missionIsOurs(mission) then
-            anyOwner = true
-            local ok = collectFromDeadTrees(mission, out)
-            if not ok then
-                ok = collectFromShapeMap(mission, out)
-            end
-            anyReadable = anyReadable or ok
-        end
-    end
-
-    -- Three outcomes, and they are NOT the same thing:
-    --   no contract running        -> empty is correct, do not fall back
-    --   contract read, 0 standing  -> all trees felled, empty is correct, do not fall back
-    --   contract present but its tables unreadable -> fall back to the walk
-    if not anyOwner then
-        return true
-    end
-    return anyReadable
-end
-
-local function walk(node, out, depth)
-    if node == nil or node == 0 or depth > dwp.MAX_DEPTH then
-        return
-    end
-    local numChildren = getNumOfChildren(node)
-    for i = 0, numChildren - 1 do
-        local child = getChildAt(node, i)
-        dwp.lastScanNodes = dwp.lastScanNodes + 1
-        local mission = contractTreeMission(child)
-        if mission ~= nil then
-            -- A split shape has no children we care about; don't recurse into a match.
-            if missionIsOurs(mission) then
-                out[#out + 1] = child
-            end
-        else
-            walk(child, out, depth + 1)
-        end
-    end
+    return true
 end
 
 function DeadwoodPointer.rescan()
     dwp.targets = {}
     dwp.lastScanNodes = 0
-    dwp.lastScanMode = "none"
+    dwp.lastScanMissions = 0
 
-    -- Fast path first: four table lookups instead of a third of a million node visits.
+    local mm = g_missionManager
+    if mm == nil or type(mm.missions) ~= "table" then
+        return 0
+    end
+
     local out = {}
-    local ok, satisfied = pcall(scanFromMissions, out)
-    if ok and satisfied then
-        dwp.lastScanMode = "mission"
-        dwp.targets = out
-        return #out
+    for _, mission in ipairs(mm.missions) do
+        -- getIsMissionSplitShape is a duck-type for "this mission type owns trees". We never CALL it
+        -- (it is server-only in effect) -- its presence just tells us the mission is a forestry one.
+        if type(mission) == "table" and mission.getIsMissionSplitShape ~= nil and missionIsOurs(mission) then
+            dwp.lastScanMissions = dwp.lastScanMissions + 1
+            pcall(collectFromDeadTrees, mission, out)
+        end
     end
 
-    -- Fallback: full scene-graph walk.
-    out = {}
-    dwp.lastScanNodes = 0
-    if getRootNode == nil or getNumOfChildren == nil or getChildAt == nil then
-        return 0
-    end
-    local root = getRootNode()
-    if root == nil or root == 0 then
-        return 0
-    end
-    pcall(walk, root, out, 0)
-    dwp.lastScanMode = "walk"
     dwp.targets = out
     return #out
 end
 
--- Cheap "has anything changed" probe. completion moves the instant a tree is felled, so this
--- catches progress without walking the scene graph.
+-- Cheap "has anything changed" probe, so a full rescan only happens when it can matter.
+--
+-- Do NOT key on m.uniqueId. It is never streamed -- it exists only in the savegame paths -- so on a
+-- multiplayer client it is nil for every mission and they all collapse to the same key, which both
+-- fires rescans on noise and misses real changes. v1.0.0.0 had exactly that bug. The loop index plus
+-- activeMissionId (streamed while RUNNING/PREPARING, AbstractMission.lua:167-168) is stable and real
+-- on both sides.
+--
+-- The fields that must be in here:
+--   status              -- accepted / finished
+--   completion          -- moves the instant a tree is felled
+--   numCutDownTrees     -- the client's live progress signal (readUpdateStream, DeadwoodMission:238);
+--                          getCompletion() is numCutDownTrees/numDeadTrees (:574)
+--   resolveDeadTreeServerIds -- REQUIRED on clients. While true, some trees still have a nil
+--                          splitShapeId and the scan legitimately finds fewer; when it flips false we
+--                          must rescan or those trees never get a marker at all.
 local function missionSignature()
     local mm = g_missionManager
     if mm == nil or type(mm.missions) ~= "table" then
         return ""
     end
     local parts = {}
-    for _, m in ipairs(mm.missions) do
+    for i, m in ipairs(mm.missions) do
         if type(m) == "table" and m.farmId ~= nil then
-            parts[#parts + 1] = tostring(m.uniqueId or "?") .. ":" .. tostring(m.status) .. ":" .. tostring(m.completion or 0)
+            parts[#parts + 1] = table.concat({
+                i,
+                tostring(m.activeMissionId),
+                tostring(m.status),
+                tostring(m.completion or 0),
+                tostring(m.numCutDownTrees or 0),
+                tostring(m.resolveDeadTreeServerIds == true),
+            }, ":")
         end
     end
     return table.concat(parts, "|")
@@ -455,6 +419,11 @@ function DeadwoodPointer:update(dt)
         return
     end
     if g_currentMission == nil or g_missionManager == nil then
+        return
+    end
+    -- Nothing to draw for on a dedicated server, so don't scan. draw() is never called there, but
+    -- update() is, and it would happily rescan every time a contract ticked over for no one.
+    if g_dedicatedServer ~= nil or g_localPlayer == nil then
         return
     end
 
@@ -613,19 +582,23 @@ function DeadwoodPointer:consoleToggle()
     return on and "Deadwood Pointer ON" or "Deadwood Pointer OFF"
 end
 
--- First-run verification, and the hook for making the scan cheaper later: dumps the running
--- missions and the top-level keys of any mission that owns trees. If one of those keys turns out to
--- hold the tree list directly, the scene-graph walk can be replaced with a direct read.
+-- Diagnostics. Prints the network role first, because that is the thing that changes the answer:
+-- on a client deadTreeShapeToTree is empty and deadTrees is the only usable source. If markers ever
+-- go missing again, the "shapeMapEmpty" flag below distinguishes "we are a client, as expected" from
+-- "the mission data itself is not there".
 function DeadwoodPointer:consoleDebug()
     local lines = {}
     local function add(fmt, ...) lines[#lines + 1] = string.format(fmt, ...) end
 
-    add("enabled=%s  targets=%d  lastScanVisited=%d  farmId=%s",
-        tostring(dwp.enabled), #dwp.targets, dwp.lastScanNodes, tostring(playerFarmId()))
+    local isServer = g_currentMission ~= nil and g_currentMission:getIsServer()
+    local isClient = g_currentMission ~= nil and g_currentMission:getIsClient()
+    add("role: isServer=%s isClient=%s dedicated=%s  |  enabled=%s targets=%d farmId=%s",
+        tostring(isServer), tostring(isClient), tostring(g_dedicatedServer ~= nil),
+        tostring(dwp.enabled), #dwp.targets, tostring(playerFarmId()))
 
     local found = DeadwoodPointer.rescan()
-    add("rescan -> %d target(s) via '%s', %d candidate(s)/node(s) examined",
-        found, tostring(dwp.lastScanMode), dwp.lastScanNodes)
+    add("rescan -> %d target(s) from %d of our contract(s), %d candidate id(s) examined",
+        found, dwp.lastScanMissions, dwp.lastScanNodes)
 
     local mm = g_missionManager
     if mm == nil or type(mm.missions) ~= "table" then
@@ -644,6 +617,28 @@ function DeadwoodPointer:consoleDebug()
                 i, typeName, tostring(m.status), tostring(m.farmId), tostring(m.completion),
                 tostring(missionIsOurs(m)))
             if m.getIsMissionSplitShape ~= nil then
+                -- The multiplayer tell. On a client shapeMapEmpty is ALWAYS true and pendingIds
+                -- counts trees whose server id has not resolved into a local node yet.
+                local shapeMapCount, pending, standing = 0, 0, 0
+                if type(m.deadTreeShapeToTree) == "table" then
+                    for _ in pairs(m.deadTreeShapeToTree) do shapeMapCount = shapeMapCount + 1 end
+                end
+                if type(m.deadTrees) == "table" then
+                    for _, t in pairs(m.deadTrees) do
+                        if type(t) == "table" and t.cutDown ~= true then
+                            if type(t.splitShapeId) ~= "number" then
+                                pending = pending + 1
+                            elseif isStandingTree(t.splitShapeId) then
+                                standing = standing + 1
+                            end
+                        end
+                    end
+                end
+                add("  trees: %d standing, %d awaiting id resolution | shapeMap=%d entries%s | resolveDeadTreeServerIds=%s",
+                    standing, pending, shapeMapCount,
+                    shapeMapCount == 0 and " (EMPTY - normal on a client)" or "",
+                    tostring(m.resolveDeadTreeServerIds))
+
                 local keys = {}
                 for k, v in pairs(m) do
                     keys[#keys + 1] = string.format("%s(%s)", tostring(k), type(v))
