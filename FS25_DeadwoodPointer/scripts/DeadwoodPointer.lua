@@ -741,8 +741,21 @@ end
 -- PlayerInputComponent.registerGlobalPlayerActionEvents, and open our OWN begin/end pair around the
 -- registration rather than assuming the base call left one open -- it calls
 -- endActionEventsModification partway through its own body, well before an appendedFunction hook
--- gets to run. Restoring the previous context is done with beginActionEventsModification(previous),
--- mirroring the proven implementation.
+-- gets to run.
+--
+-- 🚨 WHAT TO PUT BACK AFTERWARDS IS THE CONTEXT OPEN FOR WRITING, NOT g_inputBinding:getContextName().
+-- This file used to restore with the latter. They are different things:
+--
+--   getContextName()                -> currentContextName, the context the player is ACTING in
+--   beginActionEventsModification() -> registrationContext, the context being WRITTEN to
+--
+-- and they differ at exactly the moment this hook runs -- the base call has opened PLAYER for
+-- writing (PlayerInputComponent.lua:75) but has not yet made it current (makeCurrent() at :231).
+-- Restore the wrong one and every registration after this hook, including Giants' entire movement
+-- block at :79-105, lands somewhere nothing reads: the character cannot walk, look, run, jump,
+-- crouch or press E, vehicles still work, and the log is completely clean. FS25_AutoDrive_LineBrush
+-- 0.27 shipped that bug; the full write-up is trap 3 in its ADUndoInput.lua. There is no public
+-- getter for the open registration context, so the field is read directly below.
 --
 -- Hooked at file-load time, before any player exists, so it is in place for the first registration.
 -- ============================================================================
@@ -760,10 +773,24 @@ local function registerGlobalActionEvents(playerInputComponent, contextName)
 
     local action = (InputAction ~= nil and InputAction.DWPOINTER_TOGGLE) or "DWPOINTER_TOGGLE"
 
-    local previousContextName = g_inputBinding:getContextName()
-    local targetContextName = contextName or previousContextName
+    -- Restore the context open for WRITING, not the one the player is ACTING in. getContextName()
+    -- returns the latter, and the two differ at exactly the moment this hook runs: the base call
+    -- has opened PLAYER for writing (PlayerInputComponent.lua:75) but has not yet made it current
+    -- (makeCurrent() at :231). Restoring the wrong one sends every later registration - including
+    -- Giants' whole movement block at :79-105 - into the wrong context, silently, with a clean log.
+    -- That is what FS25_AutoDrive_LineBrush 0.27 did; see trap 3 in its ADUndoInput.lua.
+    local openCtx = nil
+    if InputBinding ~= nil then
+        local ctx = g_inputBinding.registrationContext
+        if ctx ~= nil and ctx ~= InputBinding.NO_REGISTRATION_CONTEXT then
+            openCtx = ctx.name
+        end
+    end
 
-    if previousContextName ~= targetContextName then
+    local targetContextName = contextName or openCtx or g_inputBinding:getContextName()
+    local switched = openCtx ~= targetContextName
+
+    if switched then
         g_inputBinding:beginActionEventsModification(targetContextName)
     end
 
@@ -774,8 +801,12 @@ local function registerGlobalActionEvents(playerInputComponent, contextName)
         g_inputBinding:setActionEventTextVisibility(eventId, false)
     end
 
-    if previousContextName ~= targetContextName then
-        g_inputBinding:beginActionEventsModification(previousContextName)
+    if switched then
+        if openCtx ~= nil then
+            g_inputBinding:beginActionEventsModification(openCtx)
+        else
+            g_inputBinding:endActionEventsModification()
+        end
     end
 end
 
