@@ -85,29 +85,6 @@ server-authoritative but not yet proven on a real dedicated server.
 
 ---
 
-## FS25_SubsoilerTillage
-
-Lets subsoilers do the plough's job.
-
-Any implement in the **Subsoilers** store category gains the three things that previously only
-a plough could do:
-
-- Create new fields (toggle with the same key a plough uses)
-- Leave **ploughed** ground state, clearing the "needs ploughing" warning
-- Count towards ploughing contracts
-
-Nothing else changes. The game still decides when a field needs ploughing; this mod only adds
-another implement that can satisfy it.
-
-> **Trade-off:** an affected subsoiler now leaves ploughed ground instead of cultivated ground,
-> so it no longer completes cultivating contracts.
-
-### Requirements
-
-Farming Simulator 25. No other mods required.
-
----
-
 ## FS25_DeadwoodPointer
 
 Marks the deadwood trees an active contract actually requires.

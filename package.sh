@@ -2,7 +2,7 @@
 # Build a distributable zip for a mod in this repo.
 #
 #   sh package.sh                        # builds FS25_ForwardContracts
-#   sh package.sh FS25_SubsoilerTillage  # or any other mod folder here
+#   sh package.sh FS25_AgroTrader        # or any other mod folder here
 #
 # ⚠ IT PACKAGES WHAT IS COMMITTED, NOT YOUR WORKING TREE.
 #
