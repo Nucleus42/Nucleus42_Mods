@@ -97,6 +97,11 @@ function Purchase.toSaleItem(listing)
 		-- Ours, and invisible to vanilla. Wearable does not know about dirt, so we apply it
 		-- ourselves in the hook below.
 		dirt = listing.dirt,
+		-- For the ADS overlay at delivery (DeliveryADS.lua): how the machine was looked after and
+		-- what paperwork came with it decide what is secretly wrong with it. Server-side these are
+		-- rebuilt from the regenerated listing in readStream, so a client cannot forge them.
+		agroTraderCare = listing.care,
+		agroTraderHistory = listing.serviceHistory,
 		[Purchase.MARKER] = listing.key,
 
 		-- ⚠ MULTIPLAYER. BuyVehicleData streams the sale id as UInt8 with 0 meaning "no sale item"
@@ -225,6 +230,17 @@ function Purchase.onBought(self, vehicles, loadingState)
 		key = self.saleItem[Purchase.MARKER],
 		period = self.saleItem.agroTraderPeriod or 0,
 	})
+
+	-- What the seller did not mention. Server-only: ADS state is authoritative there, and this
+	-- is where the spawned vehicle objects actually live. Implements and non-ADS installs are
+	-- skipped inside enqueue.
+	if g_currentMission ~= nil and g_currentMission:getIsServer() and vehicles ~= nil then
+		for _, vehicle in ipairs(vehicles) do
+			AgroTraderADS.enqueue(vehicle,
+				self.saleItem.damage, self.saleItem.agroTraderCare,
+				self.saleItem.agroTraderHistory, self.saleItem[Purchase.MARKER])
+		end
+	end
 end
 
 -- ------------------------------------------------------------------- delivery

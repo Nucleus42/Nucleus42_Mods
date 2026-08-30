@@ -175,8 +175,22 @@ Valuation.IMPLEMENT_CONDITION_SHARE = 0.25
 
 -- A used machine, however good, sits under new; and a working one, however bad, never reaches
 -- vanilla's near-zero. Both as fractions of the new price.
+--
+-- ⚠ THE FLOOR IS GRADED, NOT A LINE. A single hard floor was the first version, and play testing
+-- caught it flattening the whole bottom of the market: two AGCO 8010s — one wrecked with no
+-- history, one tidy with FSH — listed at the identical £7,020, because both had clamped to 12%.
+-- Once two machines are on a flat floor, every difference between them stops mattering, which is
+-- exactly what a floor of "scrap-plus-utility value" should not do: even at the bottom, a clean
+-- documented machine sells over a wreck. So the floor runs MIN -> MAX with condition and care.
+--
+-- Motorised machines floor lower than implements ON PURPOSE: their cheap wrecks arrive carrying
+-- ADS faults (see DeliveryADS.lua), so the sticker is only half the cost and an 8% price is
+-- honest. Implements have no ADS and no consequence for damage, so their floor stays high enough
+-- that the £400-plough exploit cannot creep back in at the bottom.
 Valuation.PRICE_CEILING = 0.92
-Valuation.PRICE_FLOOR = 0.12
+Valuation.FLOOR_MIN_MOTORIZED = 0.08
+Valuation.FLOOR_MIN_IMPLEMENT = 0.10
+Valuation.FLOOR_MAX = 0.16
 
 -- Brand strength: derived, never tabulated. The breadth of a brand's store range is the proxy for
 -- "tier-1 with a parts network behind it" — the full-line brands (John Deere, New Holland, Case,
@@ -460,13 +474,21 @@ function Valuation.getAskingPrice(storeItem, history)
 	-- implements (see IMPLEMENT_CONDITION_SHARE).
 	local conditionCost = Wearable.calculateRepairPrice(basePrice, history.damage)
 		+ Wearable.calculateRepaintPrice(basePrice, history.wear)
-	if Valuation.getMotorizedFactor(storeItem) ~= 1.0 then
+	local isMotorized = Valuation.getMotorizedFactor(storeItem) == 1.0
+	if not isMotorized then
 		conditionCost = conditionCost * Valuation.IMPLEMENT_CONDITION_SHARE
 	end
 	asking = asking - conditionCost
 
+	-- The graded floor: condition (weighted toward damage) and care decide where in the
+	-- MIN..MAX band this particular machine bottoms out, so floor-level listings still rank.
+	local floorMin = isMotorized
+		and Valuation.FLOOR_MIN_MOTORIZED or Valuation.FLOOR_MIN_IMPLEMENT
+	local conditionScore = (1 - history.damage) * 0.7 + (history.care or 0.5) * 0.3
+	local floorFrac = lerp(floorMin, Valuation.FLOOR_MAX, math.clamp(conditionScore, 0, 1))
+
 	return math.floor(math.clamp(asking,
-		basePrice * Valuation.PRICE_FLOOR, basePrice * Valuation.PRICE_CEILING))
+		basePrice * floorFrac, basePrice * Valuation.PRICE_CEILING))
 end
 
 -- ----------------------------------------------------------------------- delivery

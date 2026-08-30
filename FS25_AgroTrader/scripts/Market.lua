@@ -168,6 +168,8 @@ function Market:createListing(storeItem, period, index)
 		-- "full" / "part" / "none" — priced into the asking figure AND shown on the advert, so the
 		-- player can see what the premium buys. Derived here once so screen and price agree.
 		serviceHistory = Valuation.getServiceHistory(history.care),
+		-- Raw care carries through to the ADS overlay at delivery (service bar level).
+		care = history.care,
 
 		price = Valuation.getAskingPrice(storeItem, history),
 		distanceTier = distance.tier,

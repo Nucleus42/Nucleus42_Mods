@@ -20,6 +20,7 @@ source(AgroTrader.MOD_DIR .. "scripts/Market.lua")
 source(AgroTrader.MOD_DIR .. "scripts/events/AgroTraderStateEvent.lua")
 source(AgroTrader.MOD_DIR .. "scripts/events/AgroTraderSoldEvent.lua")
 
+source(AgroTrader.MOD_DIR .. "scripts/DeliveryADS.lua")
 source(AgroTrader.MOD_DIR .. "scripts/Purchase.lua")
 source(AgroTrader.MOD_DIR .. "scripts/gui/AgroTraderScreen.lua")
 source(AgroTrader.MOD_DIR .. "scripts/ShopHook.lua")
@@ -139,7 +140,11 @@ function AgroTrader:deleteMap()
 	self.rarity = nil
 end
 
-function AgroTrader:update(dt) end
+function AgroTrader:update(dt)
+	-- Delivered machines waiting for ADS to seed them before their real condition is written.
+	-- One table-length check per frame when idle.
+	AgroTraderADS.update(dt)
+end
 function AgroTrader:draw() end
 function AgroTrader:mouseEvent(posX, posY, isDown, isUp, button) end
 function AgroTrader:keyEvent(unicode, sym, modifier, isDown) end
