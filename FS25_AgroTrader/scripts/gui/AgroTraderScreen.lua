@@ -354,6 +354,13 @@ function AgroTraderScreen:populateCellForItemInSection(list, section, index, cel
 		and g_brandManager:getBrandByIndex(storeItem.brandIndex) or nil
 	local brandTitle = (brand ~= nil and brand.title ~= nil) and brand.title or ""
 
+	-- The "stock photo": the machine's own shop image. It shows the base model — a rolled custom
+	-- spec appears in the View-and-buy 3D, exactly as a dealer's catalogue shot works.
+	local image = cell:getAttribute("tileImage")
+	if image ~= nil and storeItem.imageFilename ~= nil then
+		image:setImageFilename(storeItem.imageFilename)
+	end
+
 	cell:getAttribute("cellName"):setText(string.format("%s %s", brandTitle, storeItem.name or "?"))
 	-- FSH is the abbreviation every real classified uses; "no history" is the warning every real
 	-- buyer knows to read. Part history is the unremarkable middle and says nothing.
@@ -363,10 +370,10 @@ function AgroTraderScreen:populateCellForItemInSection(list, section, index, cel
 	elseif listing.serviceHistory == "none" then
 		historyTag = " · no history"
 	end
-	cell:getAttribute("cellSub"):setText(string.format("%d hours · %d%% damage · %d%% paint%s",
-		listing.operatingTime / 3600000, listing.damage * 100, listing.wear * 100, historyTag))
+	cell:getAttribute("cellSub"):setText(string.format("%d hrs · %d%% damage%s",
+		listing.operatingTime / 3600000, listing.damage * 100, historyTag))
 	cell:getAttribute("cellPrice"):setText(g_i18n:formatMoney(listing.price, 0, true, true))
-	cell:getAttribute("cellDistance"):setText(string.format("%d miles away", listing.miles))
+	cell:getAttribute("cellDistance"):setText(string.format("%d miles", listing.miles))
 end
 
 --- ⚠ getSelectedIndexInSection, NOT getSelectedElementIndex. The latter does not exist on
@@ -419,6 +426,17 @@ function AgroTraderScreen:setSelected(listing)
 	self.detailPrice:setText(g_i18n:formatMoney(listing.price, 0, true, true))
 
 	self.detailStory:setText(AgroTraderScreen.getStory(listing))
+
+	-- The options this machine was ordered with, when it deviates from stock — the reason one
+	-- advert is dearer than the next for "the same" model. Stock machines show nothing.
+	if self.detailSpec ~= nil then
+		local options = Valuation.getNonStockOptions(storeItem, listing.configurations)
+		if #options > 0 then
+			self.detailSpec:setText("Spec: " .. table.concat(options, " · "))
+		else
+			self.detailSpec:setText("")
+		end
+	end
 
 	self.detailHours:setText(string.format("%d hours", listing.operatingTime / 3600000))
 	self.detailAge:setText(AgroTraderScreen.formatAge(listing.age))

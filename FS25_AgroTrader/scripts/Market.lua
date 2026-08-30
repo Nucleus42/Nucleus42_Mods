@@ -151,6 +151,9 @@ function Market:createListing(storeItem, period, index)
 		(self.salt or 1) + period * 7919))
 
 	local history = Valuation.rollHistory(storeItem, rng)
+	-- The factory spec this machine was ordered with — engines, wheels, colours. Rolled from the
+	-- same stream, so the same advert key always shows the same machine.
+	local configurations = Valuation.rollConfigurations(storeItem, rng)
 	local distance = Valuation.rollDistance(rng)
 	local deliveryFee, haulageRate = Valuation.getDeliveryFee(storeItem, distance.miles, nil, rng)
 
@@ -171,7 +174,8 @@ function Market:createListing(storeItem, period, index)
 		-- Raw care carries through to the ADS overlay at delivery (service bar level).
 		care = history.care,
 
-		price = Valuation.getAskingPrice(storeItem, history),
+		configurations = configurations,
+		price = Valuation.getAskingPrice(storeItem, history, configurations),
 		distanceTier = distance.tier,
 		miles = distance.miles,
 		deliveryFee = deliveryFee,

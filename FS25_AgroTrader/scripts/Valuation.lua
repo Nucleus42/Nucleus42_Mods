@@ -347,6 +347,108 @@ function Valuation.getHistoryFactor(care)
 	return Valuation.HISTORY_PART_FACTOR
 end
 
+-- ------------------------------------------------------------- configurations
+
+-- Chance, per configuration axis, that this machine deviates from factory stock. Settled with
+-- the user at 35%: most machines mostly standard, the odd fully-loaded one a real find — and a
+-- bigger engine explains why one advert is dearer than the next for "the same" model.
+Valuation.CONFIG_DEVIATION_CHANCE = 0.35
+
+--- Roll the specification this particular machine left the factory with.
+---
+--- Returns { configName -> itemIndex } covering EVERY axis (stock choices included), which is the
+--- shape both StoreItemUtil.getDefaultPrice and the purchase path want. nil when the item has no
+--- configurations at all.
+---
+--- ⚠ ITERATION IS OVER SORTED NAMES, NEVER pairs(). Adverts are a pure function of the rng
+--- stream, and pairs() order is not stable across sessions or platforms — an unsorted walk would
+--- give the server and a client different specs for the same advert key.
+---
+--- ⚠ DEPENDENT CONFIGURATIONS ARE RESOLVED HERE, BEFORE PRICING. Choosing some items forces
+--- another axis to a set index, and VehicleLoadingData applies that forcing at spawn
+--- (VehicleLoadingData.lua:161-166) whether we account for it or not. Resolving the same way
+--- here means the machine that is priced is exactly the machine that arrives.
+function Valuation.rollConfigurations(storeItem, rng)
+	if storeItem.configurations == nil then
+		return nil
+	end
+
+	local names = {}
+	for name in pairs(storeItem.configurations) do
+		table.insert(names, name)
+	end
+	table.sort(names)
+
+	local configs = {}
+	for _, name in ipairs(names) do
+		local items = storeItem.configurations[name]
+
+		local choice = storeItem.defaultConfigurationIds ~= nil
+			and storeItem.defaultConfigurationIds[name] or nil
+		if choice == nil then
+			choice = ConfigurationUtil.getDefaultConfigIdFromItems(items)
+		end
+
+		if rng() < Valuation.CONFIG_DEVIATION_CHANCE then
+			local selectable = {}
+			for index, item in ipairs(items) do
+				if item.isSelectable ~= false then
+					table.insert(selectable, index)
+				end
+			end
+			if #selectable > 1 then
+				choice = selectable[math.min(#selectable, math.floor(rng() * #selectable) + 1)]
+			end
+		end
+
+		configs[name] = choice
+	end
+
+	-- Same single pass VehicleLoadingData makes, over the same data.
+	for _, name in ipairs(names) do
+		local item = storeItem.configurations[name][configs[name]]
+		if item ~= nil and item.dependentConfigurations ~= nil then
+			for _, dep in ipairs(item.dependentConfigurations) do
+				configs[dep.name] = dep.index
+			end
+		end
+	end
+
+	return configs
+end
+
+--- The rolled options that differ from factory stock, as display strings — what the advert
+--- means by "this one has the bigger engine". Empty table for a stock machine.
+function Valuation.getNonStockOptions(storeItem, configurations)
+	local options = {}
+	if configurations == nil or storeItem.configurations == nil then
+		return options
+	end
+
+	local names = {}
+	for name in pairs(configurations) do
+		table.insert(names, name)
+	end
+	table.sort(names)
+
+	for _, name in ipairs(names) do
+		local items = storeItem.configurations[name]
+		local index = configurations[name]
+		if items ~= nil and items[index] ~= nil then
+			local stock = storeItem.defaultConfigurationIds ~= nil
+				and storeItem.defaultConfigurationIds[name] or nil
+			local item = items[index]
+			-- Nameless items (many colour entries) have nothing to say on an advert.
+			if index ~= stock and item.name ~= nil and item.name ~= ""
+				and item.name ~= tostring(index) then
+				table.insert(options, item.name)
+			end
+		end
+	end
+
+	return options
+end
+
 -- ------------------------------------------------------------------ brand strength
 
 -- storeItem.brandIndex -> price factor. Built once after the store is complete, alongside the
@@ -439,15 +541,18 @@ function Valuation.getMarketIndex()
 end
 
 --- Asking price. The mod's own market model — see the header for what replaced vanilla and why.
-function Valuation.getAskingPrice(storeItem, history)
-	-- ⚠ THE EMPTY TABLE IS LOAD-BEARING. NEVER PASS nil HERE.
+---
+--- `configurations` is the rolled factory spec from rollConfigurations (may be nil): the base
+--- price is the CONFIGURED machine's new price, so a bigger engine raises the whole curve.
+function Valuation.getAskingPrice(storeItem, history, configurations)
+	-- ⚠ THE EMPTY TABLE IS LOAD-BEARING. NEVER PASS nil TO getDefaultPrice.
 	--
 	-- StoreItemUtil.getCosts guards the wrong table: it tests `storeItem.configurations ~= nil`
 	-- and then iterates `pairs(configurations)`, the argument (shop/StoreItemUtil.lua:62-63).
 	-- So passing nil crashes on any machine that HAS configurations, which is nearly all of them.
 	-- Vanilla never trips this because VehicleSaleSystem always passes a table
 	-- (shop/VehicleSaleSystem.lua:301). Cost one game load to find.
-	local basePrice = StoreItemUtil.getDefaultPrice(storeItem, {})
+	local basePrice = StoreItemUtil.getDefaultPrice(storeItem, configurations or {})
 
 	-- loadSpecsFromXML leaves `specs` nil if the XML fails to open (shop/StoreItemUtil.lua:129-134),
 	-- and getMotorizedFactor reads it. An empty table is what a successful load of a spec-less item

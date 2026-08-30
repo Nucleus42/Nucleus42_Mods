@@ -54,6 +54,19 @@ function Purchase.getFactoryConfiguration(storeItem)
 	return bought
 end
 
+--- The specification this advert's machine actually carries, in `boughtConfigurations` shape.
+--- The rolled spec when there is one, the factory spec otherwise.
+function Purchase.getListingConfiguration(listing)
+	if listing.configurations == nil then
+		return Purchase.getFactoryConfiguration(listing.storeItem)
+	end
+	local bought = {}
+	for name, index in pairs(listing.configurations) do
+		bought[name] = { [index] = true }
+	end
+	return bought
+end
+
 --- Convert one advert into the shape the vanilla purchase path expects.
 ---
 --- Vanilla reads exactly these fields: `age` and `operatingTime` are copied onto the spawned
@@ -89,10 +102,13 @@ function Purchase.toSaleItem(listing)
 		--            at £3,000 (seriesREX4.xml:182). Found by the user checking their balance —
 		--            nothing on screen showed it.
 		--
-		-- Correct is to declare the machine's factory specification as already bought, which is
-		-- what bought-as-seen means: the machine comes WITH its configuration, and the player is
-		-- buying a machine, not a machine plus options.
-		boughtConfigurations = Purchase.getFactoryConfiguration(listing.storeItem),
+		-- Correct is to declare the machine's OWN specification as already bought, which is what
+		-- bought-as-seen means: the machine comes WITH its configuration — the ROLLED one when the
+		-- advert carries a spec (its options are already in the asking price via getAskingPrice),
+		-- factory stock otherwise. ShopConfigScreen:setStoreItem reads exactly this table to decide
+		-- what to load and show (ShopConfigScreen.lua:947-955), so the machine in the 3D view and
+		-- the machine delivered are both the advertised one.
+		boughtConfigurations = Purchase.getListingConfiguration(listing),
 
 		-- Ours, and invisible to vanilla. Wearable does not know about dirt, so we apply it
 		-- ourselves in the hook below.

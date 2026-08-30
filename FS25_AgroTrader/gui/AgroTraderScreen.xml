@@ -62,13 +62,18 @@
 		<Button profile="atButtonSmall" id="resetButton" text="Reset" onClick="onClickReset" position="1700px 886px" />
 
 		<Bitmap profile="atPanel" id="listPanel" position="60px 140px" size="870px 640px">
+			<!-- Classified-site tiles: stock photo on top, the facts underneath. Two per row
+			     (numLateralItems on the atList profile). The photo is storeItem.imageFilename —
+			     the machine's own shop image, free to draw; the CONFIGURED machine appears in
+			     full 3D on the View-and-buy screen, which is where that work belongs. -->
 			<SmoothList profile="atList" id="resultsList" position="0px 0px" size="850px 640px"
 				onDoubleClick="onListDoubleClick">
-				<ListItem profile="atListItem">
-					<Text name="cellName" profile="atListName" />
-					<Text name="cellSub" profile="atListSub" />
-					<Text name="cellPrice" profile="atListPrice" />
-					<Text name="cellDistance" profile="atListDistance" />
+				<ListItem profile="atListTile">
+					<Bitmap name="tileImage" profile="atTileImage" />
+					<Text name="cellName" profile="atTileName" />
+					<Text name="cellSub" profile="atTileSub" />
+					<Text name="cellPrice" profile="atTilePrice" />
+					<Text name="cellDistance" profile="atTileDistance" />
 				</ListItem>
 			</SmoothList>
 			<Slider profile="atListSlider" id="resultsSlider" dataElementId="resultsList" position="854px 0px" />
@@ -83,6 +88,7 @@
 			<Text profile="atPrice" id="detailPrice" text="" position="460px 578px" />
 
 			<Text profile="atTextSmall" id="detailStory" text="" position="30px 512px" size="860px 24px" />
+			<Text profile="atTextAccent" id="detailSpec" text="" position="30px 484px" size="860px 24px" />
 
 			<Text profile="atDetailRowLabel" id="labelHoursDetail" text="Operating hours" position="30px 450px" />
 			<Text profile="atTextValue" id="detailHours" text="" position="330px 450px" size="240px 26px" />

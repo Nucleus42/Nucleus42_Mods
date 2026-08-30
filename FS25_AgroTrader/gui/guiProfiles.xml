@@ -127,20 +127,29 @@
 
 	<Profile name="atList" extends="baseReference">
 		<size value="850px 620px" />
-		<listItemSpacing value="2px" />
+		<listItemSpacing value="8px" />
+		<listItemLateralSpacing value="8px" />
+		<numLateralItems value="2" />
 	</Profile>
 
-	<Profile name="atListItem" extends="fs25_subCategoryListItem">
-		<size value="850px 54px" />
+	<Profile name="atListTile" extends="fs25_subCategoryListItem">
+		<size value="417px 300px" />
 		<imageColor value="0.008023 0.010330 0.015209 1" />
 		<imageHighlightedColor value="0.019382 0.026241 0.039546 1" />
 		<imageSelectedColor value="0.028426 0.102242 0.015996 1" />
 	</Profile>
 
-	<Profile name="atListName" extends="baseReference">
-		<size value="420px 100%" />
-		<position value="18px 12px" />
-		<textSize value="19px" />
+	<!-- Store images are 2:1, so 401x200 shows them undistorted. -->
+	<Profile name="atTileImage" extends="baseReference">
+		<size value="401px 200px" />
+		<position value="8px 92px" />
+		<imageColor value="1 1 1 1" />
+	</Profile>
+
+	<Profile name="atTileName" extends="baseReference">
+		<size value="401px 28px" />
+		<position value="12px 58px" />
+		<textSize value="18px" />
 		<textAlignment value="left" />
 		<textVerticalAlignment value="middle" />
 		<textUpperCase value="false" />
@@ -149,28 +158,27 @@
 		<textSelectedColor value="1 1 1 1" />
 	</Profile>
 
-	<Profile name="atListSub" extends="atListName">
-		<size value="420px 100%" />
-		<position value="18px -12px" />
-		<textSize value="15px" />
+	<Profile name="atTileSub" extends="atTileName">
+		<size value="401px 22px" />
+		<position value="12px 36px" />
+		<textSize value="14px" />
 		<textColor value="0.208637 0.246201 0.296138 1" />
 		<textHighlightedColor value="0.208637 0.246201 0.296138 1" />
 		<textSelectedColor value="0.723055 0.768151 0.822786 1" />
 	</Profile>
 
-	<Profile name="atListPrice" extends="atListName">
-		<size value="240px 100%" />
-		<position value="550px 12px" />
+	<Profile name="atTilePrice" extends="atTileName">
+		<size value="240px 30px" />
+		<position value="12px 6px" />
 		<textSize value="20px" />
-		<textAlignment value="right" />
 		<textColor value="0.201556 0.450786 0.054480 1" />
 		<textHighlightedColor value="0.201556 0.450786 0.054480 1" />
 		<textSelectedColor value="1 1 1 1" />
 	</Profile>
 
-	<Profile name="atListDistance" extends="atListSub">
-		<size value="240px 100%" />
-		<position value="550px -12px" />
+	<Profile name="atTileDistance" extends="atTileSub">
+		<size value="150px 30px" />
+		<position value="255px 8px" />
 		<textAlignment value="right" />
 	</Profile>
 
