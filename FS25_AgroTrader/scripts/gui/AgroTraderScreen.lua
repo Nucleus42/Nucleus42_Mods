@@ -358,7 +358,28 @@ function AgroTraderScreen:populateCellForItemInSection(list, section, index, cel
 	-- spec appears in the View-and-buy 3D, exactly as a dealer's catalogue shot works.
 	local image = cell:getAttribute("tileImage")
 	if image ~= nil and storeItem.imageFilename ~= nil then
-		image:setImageFilename(storeItem.imageFilename)
+		-- A configuration item can carry its own store icon (config.vehicleIcon) — when the
+		-- rolled spec has one, the "stock photo" really does show the machine advertised. Same
+		-- lookup vanilla's contracts screen does (InGameMenuContractsFrame.lua:273-286).
+		local imageFilename = storeItem.imageFilename
+		if listing.configurations ~= nil and storeItem.configurations ~= nil then
+			for configName, configId in pairs(listing.configurations) do
+				local items = storeItem.configurations[configName]
+				local config = items ~= nil and items[configId] or nil
+				if config ~= nil and config.vehicleIcon ~= nil and config.vehicleIcon ~= "" then
+					imageFilename = config.vehicleIcon
+					break
+				end
+			end
+		end
+
+		image:setImageFilename(imageFilename)
+		-- ⚠ THE ALPHA RESET IS NOT OPTIONAL. A swapped overlay can come back with alpha 0, and
+		-- GuiOverlay.renderOverlay skips transparent overlays outright — the photo column
+		-- renders as nothing with no error anywhere. Vanilla does exactly this pair of calls
+		-- after every swap (InGameMenuContractsFrame.lua:288-289); it cost three screenshot
+		-- round-trips to find. Keep the two lines together.
+		image:setImageColor(nil, nil, nil, nil, 1)
 	end
 
 	-- One line, once per session, so a blank photo column diagnoses itself from the log instead
