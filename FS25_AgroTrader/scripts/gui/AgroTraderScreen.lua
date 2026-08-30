@@ -361,6 +361,24 @@ function AgroTraderScreen:populateCellForItemInSection(list, section, index, cel
 		image:setImageFilename(storeItem.imageFilename)
 	end
 
+	-- One line, once per session, so a blank photo column diagnoses itself from the log instead
+	-- of costing another screenshot round-trip: which part is missing — the element, the
+	-- filename, or the overlay the swap should have created.
+	if not AgroTraderScreen.tileImageChecked then
+		AgroTraderScreen.tileImageChecked = true
+		if image == nil then
+			Logging.warning("[AgroTrader] Tile has no 'tileImage' attribute — photo column dead.")
+		elseif storeItem.imageFilename == nil then
+			Logging.warning("[AgroTrader] '%s' has no store image.", tostring(storeItem.name))
+		elseif image.overlay == nil or image.overlay.overlay == nil then
+			Logging.warning("[AgroTrader] Tile image overlay failed to create for '%s'.",
+				tostring(storeItem.imageFilename))
+		else
+			Logging.info("[AgroTrader] Tile images live (first: %s).",
+				tostring(storeItem.imageFilename))
+		end
+	end
+
 	cell:getAttribute("cellName"):setText(string.format("%s %s", brandTitle, storeItem.name or "?"))
 	-- FSH is the abbreviation every real classified uses; "no history" is the warning every real
 	-- buyer knows to read. Part history is the unremarkable middle and says nothing.

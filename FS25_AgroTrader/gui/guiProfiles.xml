@@ -141,16 +141,29 @@
 	     our own state colours is the whole requirement. -->
 	<Profile name="atListTile" extends="baseReference">
 		<size value="417px 300px" />
+		<!-- ⚠ THE PIVOT IS WHAT MAKES ROWS FILL FROM THE TOP. SmoothList positions a cell by
+		     setPosition with an offset measured from the list top, and GuiElement resolves that
+		     against the pivot: posY = pivot[2]*(parentHeight-cellHeight) + position[2]
+		     (GuiElement.lua:427). The default pivot is {0,0} — bottom-left — which stacked the
+		     tiles from the BOTTOM of the panel. The vanilla list-item profile was silently
+		     providing this; losing it was the cost of dropping that profile. -->
+		<pivot value="0 1" />
 		<imageColor value="0.008023 0.010330 0.015209 1" />
 		<imageHighlightedColor value="0.019382 0.026241 0.039546 1" />
 		<imageSelectedColor value="0.028426 0.102242 0.015996 1" />
 		<imageFocusedColor value="0.019382 0.026241 0.039546 1" />
 	</Profile>
 
-	<!-- Store images are 2:1, so 401x200 shows them undistorted. -->
+	<!-- Store images are 2:1, so 401x200 shows them undistorted.
+	     ⚠ THE INITIAL imageFilename IS WHAT ARMS THE OVERLAY. A Bitmap with no image in its
+	     profile never builds the full overlay pipeline, and a later setImageFilename swap draws
+	     nothing. Vanilla's swappable icons (e.g. AnimalScreen's targetIcon) all start with a real
+	     image and swap it at runtime; g_baseUIFilename is the UI atlas the game guarantees is
+	     loaded, and populateCell replaces it with the machine's own photo before anything shows. -->
 	<Profile name="atTileImage" extends="baseReference">
 		<size value="401px 200px" />
 		<position value="8px 92px" />
+		<imageFilename value="g_baseUIFilename" />
 		<imageColor value="1 1 1 1" />
 	</Profile>
 
