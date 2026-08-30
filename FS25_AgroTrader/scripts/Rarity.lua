@@ -44,18 +44,17 @@ Rarity.IMPLEMENT_ITEM_FLOOR = 0.80
 
 -- Cheapest machine worth advertising.
 --
--- ⚠ DELIBERATELY HALF OF VANILLA'S. The base game uses 10,000
+-- ⚠ OVERTURNED TWICE, downward both times. Vanilla uses 10,000
 -- (VehicleSaleSystem.MINIMUM_ITEM_VALUE, shop/VehicleSaleSystem.lua:2) because its used tab has
--- only five slots — a 600 bucket appearing there would crowd out a tractor. AgroTrader has a
--- large searchable pool where a cheap listing costs nothing and only surfaces if somebody
--- filters for it, so that reasoning does not carry over.
---
--- Measured against base-game data on 2026-08-01: at 10,000 the threshold removed 103 of 548
--- machines (18.8%), including 10 of 11 frontLoaders and 15 of 16 frontLoaderTools. Since
--- "Attachment" is one of the two REQUIRED filters, that made Attachment -> Front Loaders a
--- permanently empty screen. 5,000 still drops weights, teleLoaderTools, levelers and baling
--- miscellany wholesale, which is right — nobody hunts a second-hand weight bracket.
-Rarity.MINIMUM_ITEM_VALUE = 5000
+-- only five slots; at 10,000 here the threshold emptied Attachment -> Front Loaders outright
+-- (measured 2026-08-01), so it became 5,000. That version's comment claimed dropping weights,
+-- levelers and baling miscellany "is right — nobody hunts a second-hand weight bracket". Play
+-- disagreed (2026-08-30): the user went looking for a tractor weight and found the same lone
+-- over-£5k one repeatedly, because every normal weight was excluded wholesale. AgroTrader's pool
+-- is searchable and a cheap listing costs nothing, so the floor now only excludes genuine
+-- trinkets. Do not raise it back on tidiness grounds — absence from a market people search IS
+-- the visible failure.
+Rarity.MINIMUM_ITEM_VALUE = 500
 
 function Rarity.new()
 	local self = setmetatable({}, Rarity_mt)

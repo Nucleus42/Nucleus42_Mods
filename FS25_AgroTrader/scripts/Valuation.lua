@@ -48,29 +48,42 @@ Valuation = {}
 -- for BOTH types — identical value loss, no special cases, and the worthless cliff becomes
 -- unreachable by construction rather than something we clamp against.
 --
--- `rate` is life consumed per month of age.
+-- `rate` is life consumed per month of age. `weight` is how often that kind of seller appears —
+-- settled with the user 2026-08-30 against real trading sites: the bulk of the market is the
+-- unremarkable "had it a few years, selling toward an upgrade" machine; the big estate refreshing
+-- a light-worked fleet is common enough; the thrashed ex-contractor machine is the auction /
+-- foreclosure end and turns up the least.
 Valuation.ARCHETYPES = {
 	{
 		id = "estate",
 		-- Big fleet, many machines sharing the work, so any one of them does little.
 		rateMin = 0.0020, rateMax = 0.0035,
+		weight = 0.35,
 	},
 	{
 		id = "family",
 		-- A mixed farm with enough kit to spread the load. Roughly vanilla's behaviour.
 		rateMin = 0.0040, rateMax = 0.0065,
+		weight = 0.45,
 	},
 	{
 		id = "contractor",
 		-- Solo operator or contractor: one or two machines doing every job, worked hard.
 		-- These are the cheap ones with a catch.
 		rateMin = 0.0075, rateMax = 0.0110,
+		weight = 0.20,
 	},
 }
 
 -- Age of the machines that turn up. Vanilla uses 6-40 months; a marketplace worth searching needs
 -- to go further, so up to ten years.
+--
+-- ⚠ NOT UNIFORM ANY MORE. A uniform draw made a ten-year wreck as common as the three-year
+-- upgrade sale, which is not what any real classifieds page looks like: the mass of the market
+-- is mid-life machines, nearly-new is scarcer (why sell?), and genuinely old stock is the thin
+-- auction tail. The draw is triangular — rises to a peak at AGE_MODE_MONTHS, tapers to the max.
 Valuation.AGE_MIN_MONTHS = 6
+Valuation.AGE_MODE_MONTHS = 42
 Valuation.AGE_MAX_MONTHS = 120
 
 -- Bounds on life consumed. The upper bound is what makes genuinely beaten machinery findable —
@@ -260,16 +273,38 @@ end
 --- archetype, so a high-hours machine that was properly maintained is a genuine find and a
 --- low-hours neglected one is a genuine trap. Tying damage to hours in lockstep would make every
 --- listing at a given age interchangeable, which is the vanilla behaviour we are replacing.
+--- One draw from a triangular distribution over [a, b] peaking at mode c. Standard inverse-CDF;
+--- a single rng draw, so the stream stays deterministic.
+function Valuation.rollTriangular(a, c, b, rng)
+	local r = (rng or math.random)()
+	local cut = (c - a) / (b - a)
+	if r < cut then
+		return a + math.sqrt(r * (b - a) * (c - a))
+	end
+	return b - math.sqrt((1 - r) * (b - a) * (b - c))
+end
+
 function Valuation.rollHistory(storeItem, rng)
 	rng = rng or math.random
 
 	-- Drawn from the injected stream like everything else, so a seeded rng reproduces the whole
 	-- listing. Do not reach for math.random directly anywhere in here.
-	local archetype = Valuation.ARCHETYPES[
-		math.min(#Valuation.ARCHETYPES, math.floor(rng() * #Valuation.ARCHETYPES) + 1)]
+	--
+	-- Weighted by archetype.weight — one draw over the cumulative weights, so the auction-grade
+	-- contractor machine is the exception, not a third of the market.
+	local archetype = Valuation.ARCHETYPES[#Valuation.ARCHETYPES]
+	local draw = rng()
+	local cumulative = 0
+	for _, candidate in ipairs(Valuation.ARCHETYPES) do
+		cumulative = cumulative + candidate.weight
+		if draw < cumulative then
+			archetype = candidate
+			break
+		end
+	end
 
-	local ageMonths = math.floor(Valuation.range(
-		Valuation.AGE_MIN_MONTHS, Valuation.AGE_MAX_MONTHS, rng) + 0.5)
+	local ageMonths = math.floor(Valuation.rollTriangular(
+		Valuation.AGE_MIN_MONTHS, Valuation.AGE_MODE_MONTHS, Valuation.AGE_MAX_MONTHS, rng) + 0.5)
 
 	local rate = Valuation.range(archetype.rateMin, archetype.rateMax, rng)
 	local lifeUsed = math.clamp(ageMonths * rate,
