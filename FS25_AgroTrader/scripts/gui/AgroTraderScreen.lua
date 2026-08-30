@@ -53,6 +53,9 @@ function AgroTraderScreen.register(market, rarity)
 	g_gui:loadProfiles(AgroTrader.MOD_DIR .. "gui/guiProfiles.xml")
 
 	local screen = AgroTraderScreen.new(market, rarity)
+	-- For the atProbe console command: the live instance, so a probe can inspect the real
+	-- elements rather than reasoning about what they ought to be.
+	AgroTraderScreen.instance = screen
 	-- isFrame = false: this is a screen, not a page inside somebody's tabbed menu
 	-- (Gui.lua:198-204).
 	g_gui:loadGui(AgroTrader.MOD_DIR .. "gui/AgroTraderScreen.xml",

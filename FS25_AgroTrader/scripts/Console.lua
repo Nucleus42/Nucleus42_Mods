@@ -15,6 +15,7 @@ Console.COMMANDS = {
 	{ name = "atSearch", desc = "Search the market: [type/make/model] [maxMiles] [maxHours]", fn = "consoleSearch" },
 	{ name = "atMarket", desc = "Market size and turnover summary", fn = "consoleMarket" },
 	{ name = "atBuy", desc = "Buy result N from the last atSearch", fn = "consoleBuy" },
+	{ name = "atProbe", desc = "Dump the live render state of the first tile image (screen must be open)", fn = "consoleProbe" },
 }
 
 -- A broad search can match thousands of adverts. The console is not the place to print them all.
@@ -264,4 +265,93 @@ function Console:consoleMarket()
 
 	return string.format("AgroTrader: %d adverts across %d machines. Detail in log.txt.",
 		listings, machines)
+end
+
+-- --------------------------------------------------------------------- the probe
+
+local function fmtVec(t, n)
+	if type(t) ~= "table" then
+		return tostring(t)
+	end
+	local parts = {}
+	for i = 1, (n or #t) do
+		table.insert(parts, string.format("%.4f", tonumber(t[i]) or -999))
+	end
+	return "{" .. table.concat(parts, ", ") .. "}"
+end
+
+--- Dump everything the renderer sees for the first live tile image. Facts, not theory: the
+--- element's geometry, its overlay's every field, the state the render would use, and the parent
+--- chain — so a blank photo column names its own cause.
+function Console:consoleProbe()
+	local screen = AgroTraderScreen ~= nil and AgroTraderScreen.instance or nil
+	if screen == nil or screen.resultsList == nil then
+		return "AgroTrader: no screen instance."
+	end
+
+	local list = screen.resultsList
+	print("== atProbe ==")
+	print(string.format("list: visible=%s absPos=%s absSize=%s numLateralItems=%s #elements=%d",
+		tostring(list.visible), fmtVec(list.absPosition, 2), fmtVec(list.absSize, 2),
+		tostring(list.numLateralItems), #list.elements))
+
+	local cell = nil
+	for _, element in ipairs(list.elements) do
+		if element.getAttribute ~= nil and element:getAttribute("tileImage") ~= nil then
+			cell = element
+			break
+		end
+	end
+	if cell == nil then
+		return "AgroTrader: no live cell with a tileImage — open the screen, then run atProbe."
+	end
+
+	local image = cell:getAttribute("tileImage")
+
+	local function dumpElement(label, e)
+		print(string.format("%s: profile=%s visible=%s pos=%s size=%s absPos=%s absSize=%s",
+			label, tostring(e.profile), tostring(e.visible),
+			fmtVec(e.position, 2), fmtVec(e.size, 2),
+			fmtVec(e.absPosition, 2), fmtVec(e.absSize, 2)))
+		print(string.format("%s: pivot=%s anchors=%s clipping=%s alpha=%s",
+			label, fmtVec(e.pivot, 2), fmtVec(e.anchors, 4),
+			tostring(e.clipping), tostring(e.alpha)))
+	end
+
+	dumpElement("cell", cell)
+	dumpElement("image", image)
+
+	local overlay = image.overlay
+	if overlay == nil then
+		return "AgroTrader: image.overlay is nil — the Bitmap never built an overlay."
+	end
+
+	print(string.format("overlay: filename=%s handle=%s alpha=%s rotation=%s",
+		tostring(overlay.filename), tostring(overlay.overlay),
+		tostring(overlay.alpha), tostring(overlay.rotation)))
+	print(string.format("overlay: color=%s uvs=%s",
+		fmtVec(overlay.color, 4), fmtVec(overlay.uvs, 8)))
+
+	-- Every state-suffixed field on the overlay table, so nothing is invisible to the probe.
+	for key, value in pairs(overlay) do
+		if key ~= "filename" and key ~= "overlay" and key ~= "alpha" and key ~= "rotation"
+			and key ~= "color" and key ~= "uvs" then
+			local shown
+			if type(value) == "table" then
+				shown = fmtVec(value, math.min(#value, 8))
+			else
+				shown = tostring(value)
+			end
+			print(string.format("overlay.%s = %s", key, shown))
+		end
+	end
+
+	-- What the render call would actually do, computed with the game's own functions.
+	local state = image:getOverlayState()
+	local stateOverlay = GuiOverlay.getOverlay(overlay, state)
+	local stateColor = GuiOverlay.getOverlayColor(overlay, state)
+	print(string.format("render: state=%s stateOverlay=%s stateColor=%s",
+		tostring(state), tostring(stateOverlay), fmtVec(stateColor, 8)))
+
+	return "AgroTrader: probe dumped to log.txt."
 end
