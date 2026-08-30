@@ -299,14 +299,24 @@ function AgroTraderScreen:refresh()
 	end
 
 	if self.resultCountText ~= nil then
+		-- The whole used market breathes with crop prices (Valuation.getMarketIndex). Saying so is
+		-- what turns a dear month from "the mod is broken" into "wait for prices to soften".
+		local index = Valuation.getMarketIndex()
+		local mood = ""
+		if index <= 0.96 then
+			mood = " · prices soft — buyer's market"
+		elseif index >= 1.04 then
+			mood = " · prices firm — seller's market"
+		end
+
 		if found == 0 then
 			self.resultCountText:setText("No machines match")
 		elseif truncated then
-			self.resultCountText:setText(string.format("%d found, showing the %d cheapest",
-				found, AgroTraderScreen.MAX_ROWS))
+			self.resultCountText:setText(string.format("%d found, showing the %d cheapest%s",
+				found, AgroTraderScreen.MAX_ROWS, mood))
 		else
-			self.resultCountText:setText(string.format("%d machine%s for sale",
-				found, found == 1 and "" or "s"))
+			self.resultCountText:setText(string.format("%d machine%s for sale%s",
+				found, found == 1 and "" or "s", mood))
 		end
 	end
 
@@ -345,8 +355,16 @@ function AgroTraderScreen:populateCellForItemInSection(list, section, index, cel
 	local brandTitle = (brand ~= nil and brand.title ~= nil) and brand.title or ""
 
 	cell:getAttribute("cellName"):setText(string.format("%s %s", brandTitle, storeItem.name or "?"))
-	cell:getAttribute("cellSub"):setText(string.format("%d hours · %d%% damage · %d%% paint",
-		listing.operatingTime / 3600000, listing.damage * 100, listing.wear * 100))
+	-- FSH is the abbreviation every real classified uses; "no history" is the warning every real
+	-- buyer knows to read. Part history is the unremarkable middle and says nothing.
+	local historyTag = ""
+	if listing.serviceHistory == "full" then
+		historyTag = " · FSH"
+	elseif listing.serviceHistory == "none" then
+		historyTag = " · no history"
+	end
+	cell:getAttribute("cellSub"):setText(string.format("%d hours · %d%% damage · %d%% paint%s",
+		listing.operatingTime / 3600000, listing.damage * 100, listing.wear * 100, historyTag))
 	cell:getAttribute("cellPrice"):setText(g_i18n:formatMoney(listing.price, 0, true, true))
 	cell:getAttribute("cellDistance"):setText(string.format("%d miles away", listing.miles))
 end
@@ -440,7 +458,12 @@ function AgroTraderScreen.getStory(listing)
 		family = "Owned by a mixed family farm. Steady, unremarkable use.",
 		contractor = "Ex-contractor. Worked hard and it shows, but priced accordingly.",
 	}
-	return stories[listing.archetype] or ""
+	local histories = {
+		full = " Full main-dealer service history.",
+		part = " Part service history.",
+		none = " No service history — sold as seen.",
+	}
+	return (stories[listing.archetype] or "") .. (histories[listing.serviceHistory] or "")
 end
 
 -- --------------------------------------------------------------------- actions

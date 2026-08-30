@@ -9,8 +9,14 @@ is the other thing — you go hunting.
 ## What it does
 
 Search the used market by type, make and model. Every listing is a specific machine with its own
-hours, damage and paintwork, and an asking price worked out from all three using the game's own
-valuation maths — no invented economics.
+hours, damage, paintwork and service history, priced the way the real used market prices: hours
+trump years, a machine that works is never nearly free, full service history commands a premium,
+strong brands hold their value, and the whole market firms and softens with crop prices — buy
+your combine when wheat is down.
+
+Earlier versions used the game's own trade-in maths for asking prices. That maths is what the
+shop *pays you*, not what a dealer charges, and it made a whole arable fleet cost £30-40k; the
+market model replaced it in v1.1. Selling is still vanilla, so buy-then-resell always loses.
 
 **Machines are listed from all over the country.** The further away one is, the more the delivery
 costs, and delivery is haulage so a heavy machine costs more to move than a dear one.
@@ -64,5 +70,6 @@ Run `atRarity` in the console to print the full derived table for your own insta
 
 ## Credits
 
-Nucleus42. Valuation, depreciation and damage-accumulation maths are the base game's own,
-used unchanged.
+Nucleus42. Asking prices are the mod's own market model, calibrated against real English used
+machinery prices; repair, repaint and damage-accumulation maths are the base game's own, used
+unchanged.

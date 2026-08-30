@@ -7,7 +7,7 @@ AgroTrader.MOD_NAME = g_currentModName
 AgroTrader.MOD_DIR = g_currentModDirectory
 -- Printed to the log on load. Keep in step with <version> in modDesc.xml — a tester reading the
 -- log against the mod list is exactly who notices when these disagree.
-AgroTrader.VERSION = "1.0.0.0"
+AgroTrader.VERSION = "1.1.0.0"
 
 -- Order matters: Market reads constants off Valuation and Rarity at call time, and Market
 -- registers its own MessageType at source time.
@@ -88,6 +88,10 @@ function AgroTrader.onFinishedLoading()
 	end
 
 	mod.rarity:build()
+
+	-- Same timing constraint as the rarity build, same reason: the store must be complete. Built
+	-- on both sides — it is pure derivation from g_storeManager, so clients agree for free.
+	Valuation.buildBrandStrength()
 
 	-- ⚠ ONLY THE SERVER READS THE SAVEGAME. A client's salt arrives over the wire via
 	-- AgroTraderStateEvent; calling load() there would roll a fresh random salt and give that

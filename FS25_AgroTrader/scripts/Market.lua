@@ -165,6 +165,9 @@ function Market:createListing(storeItem, period, index)
 		damage = history.damage,
 		wear = history.wear,
 		dirt = history.dirt,
+		-- "full" / "part" / "none" — priced into the asking figure AND shown on the advert, so the
+		-- player can see what the premium buys. Derived here once so screen and price agree.
+		serviceHistory = Valuation.getServiceHistory(history.care),
 
 		price = Valuation.getAskingPrice(storeItem, history),
 		distanceTier = distance.tier,

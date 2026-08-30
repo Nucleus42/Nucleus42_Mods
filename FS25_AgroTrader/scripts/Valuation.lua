@@ -1,20 +1,35 @@
 -- AgroTrader — valuation, condition rolling and delivery.
 --
--- ⚠ THE PRICE MATHS IS THE BASE GAME'S, UNMODIFIED. We call Vehicle.calculateSellPrice,
--- Wearable.calculateRepairPrice and Wearable.calculateRepaintPrice directly rather than
--- reimplementing them, so AgroTrader can never drift from what the vanilla shop would say.
+-- ⚠ OVERTURNED (2026-08-30): v1.0 priced adverts with the vanilla maths, unmodified, on the
+-- principle that AgroTrader should never drift from what the shop would say. Play testing killed
+-- that principle: an entire arable fleet — two tractors, combine, telehandler, sprayer, tanker,
+-- spreader, roller, seeder — came to £30-40k, because Vehicle.calculateSellPrice is a TRADE-IN
+-- penalty function, not a market price. It multiplies the age factor by the hours factor (double
+-- depreciation for the same underlying use), has no residual floor, and subtracts full repair and
+-- repaint costs even on implements, which never need repairing and lose nothing by being scruffy.
 --
--- Exactly five things move a used price in FS25, and the source contains nothing else:
---   base price + storeItem.lifetime   (shop/StoreManager.lua:699-710)
---   age in months  -> ageFactor        = min(-0.1*ln(years) + 0.75, 0.85)
---   operating hours -> operatingTimeFactor = 1 - hours^k / lifetime
---   damage  -> subtracted as repair price  = price * damage^1.5 * 0.09
---   wear    -> subtracted as repaint price = price * 0.2 * sqrt(wear)
---                                     (vehicles/Vehicle.lua:1862-1874, Wearable.lua:294-309)
+-- The asking price is now the mod's own model, built with the user against real English used
+-- machinery prices (see README research):
 --
--- DIRT IS NOT ONE OF THEM. We roll and apply it so a delivered machine looks its age, but it has
--- no effect on price in vanilla and none here. A wash costs nothing; pricing it would mean
--- inventing economics the game does not have. Do not add a dirt term.
+--   asking = newPrice x residual(lifeUsed)      hours-primary threshold curve — value holds to
+--                                               ~40% life, drops steeply to ~80% ("overhaul
+--                                               looming"), floors near scrap-plus-utility
+--          x ageAdjust                          mild: hours trump years in farm machinery
+--          x historyFactor                      full service history commands 12-18% real premium
+--          x brandFactor                        tier-1 ranges hold value; derived from store data
+--          x marketIndex                        crop price seasonality moves farm incomes
+--          - conditionCost                      full repair+repaint on motorised (ADS makes it
+--                                               real), a quarter of it on implements (cosmetic)
+--
+-- Vanilla's calculateSellPrice is UNTOUCHED as the sell-back value, so the buy/sell spread stays
+-- punishing and buy-then-resell always loses money.
+--
+-- The vanilla condition formulas (Wearable.calculateRepairPrice / calculateRepaintPrice) are
+-- still called for the condition term, so that term can never drift from what a repair would
+-- actually cost.
+--
+-- DIRT IS STILL NEVER PRICED. We roll and apply it so a delivered machine looks its age, but a
+-- wash costs nothing; pricing it would mean inventing economics the game does not have.
 
 Valuation = {}
 
@@ -119,6 +134,67 @@ Valuation.DELIVERY_MINIMUM = 175
 -- better than charging nothing. 3 t sits on the small/medium boundary.
 Valuation.DELIVERY_FALLBACK_TONNES = 3.0
 
+-- ------------------------------------------------------------------ pricing model
+--
+-- Residual value against life consumed, as piecewise-linear knots. The shape is the real used
+-- market's: hours trump years, value holds while plenty of working life remains, then drops
+-- steeply once major overhauls loom (the 6,000-8,000 hour cliff on a real tractor), and floors at
+-- scrap-plus-utility — a machine that works is never nearly free. Calibrated 2026-08-30 against
+-- English used prices supplied by the user: a mid-life 150hp tractor at ~55-60% of new, a
+-- thrashed ex-contractor one still ~£15-20k against £100k new.
+Valuation.RESIDUAL_KNOTS = {
+	{ 0.00, 0.90 },
+	{ 0.20, 0.80 },
+	{ 0.40, 0.62 },
+	{ 0.60, 0.40 },
+	{ 0.80, 0.25 },
+	{ 1.00, 0.18 },
+}
+
+-- Age matters far less than hours for an income-generating asset — a 5-year-old tractor with
+-- 2,000 hours outvalues a 2-year-old with 6,500. A mild drift downward, capped.
+Valuation.AGE_DISCOUNT_PER_YEAR = 0.015
+Valuation.AGE_FACTOR_FLOOR = 0.85
+
+-- Service history, read off the rolled `care`. A fully documented machine commands a 12-18% real
+-- premium; no history knocks value off. The thresholds also label the advert, so the premium is
+-- something the player can see they are paying for.
+Valuation.HISTORY_FULL_MIN_CARE = 0.75   -- "Full service history"
+Valuation.HISTORY_NONE_MAX_CARE = 0.40   -- below this: "No service history"
+Valuation.HISTORY_FULL_FACTOR = 1.15
+Valuation.HISTORY_PART_FACTOR = 1.00
+Valuation.HISTORY_NONE_FACTOR = 0.90
+
+-- ⚠ THE CONDITION DISCOUNT IS MOSTLY WITHHELD FROM IMPLEMENTS, ON PURPOSE. Attachments are never
+-- repaired in FS25 and lose nothing by being damaged — the game charges no consequence at all. So
+-- a discount for implement damage is free money, and it was the single biggest hole in v1.0: a
+-- £400 plough that works forever. Motorised machines keep the full discount because ADS makes
+-- their damage genuinely expensive. The residual quarter kept for implements is cosmetic — a
+-- tatty machine should still list slightly under a clean one.
+Valuation.IMPLEMENT_CONDITION_SHARE = 0.25
+
+-- A used machine, however good, sits under new; and a working one, however bad, never reaches
+-- vanilla's near-zero. Both as fractions of the new price.
+Valuation.PRICE_CEILING = 0.92
+Valuation.PRICE_FLOOR = 0.12
+
+-- Brand strength: derived, never tabulated. The breadth of a brand's store range is the proxy for
+-- "tier-1 with a parts network behind it" — the full-line brands (John Deere, New Holland, Case,
+-- Fendt, Claas...) carry the widest ranges in the game's own data and hold their value; a brand
+-- with three products depreciates hard. A deliberately narrow swing: it colours prices, it does
+-- not drive them.
+Valuation.BRAND_FACTOR_MIN = 0.94
+Valuation.BRAND_FACTOR_MAX = 1.06
+
+-- Market mood: when crop prices are up, farm incomes are up and used kit is bid up. Derived from
+-- the game's own seasonal price factors across every fill type it shows on the price table —
+-- deterministic (catmullRom over fixed per-period factors, EconomyManager.lua:440-448), so server
+-- and client always agree without anything crossing the wire. SWING scales how hard the crop
+-- seasonality moves machinery; the clamp bounds the whole effect.
+Valuation.MARKET_SWING = 0.8
+Valuation.MARKET_INDEX_MIN = 0.88
+Valuation.MARKET_INDEX_MAX = 1.12
+
 -- ------------------------------------------------------------------------ helpers
 
 local function lerp(a, b, t)
@@ -212,10 +288,143 @@ function Valuation.rollHistory(storeItem, rng)
 		damage = damage,
 		wear = wear,
 		dirt = dirt,
+		-- Kept on the history because the service-history tier is priced AND shown; deriving the
+		-- label from damage instead would let the two disagree.
+		care = care,
 	}
 end
 
---- Asking price, using the base game's own arithmetic end to end.
+-- ------------------------------------------------------------------ pricing terms
+
+--- Residual share of new price for a machine with fraction `u` of its life consumed.
+--- Piecewise-linear over RESIDUAL_KNOTS.
+function Valuation.getResidual(u)
+	local knots = Valuation.RESIDUAL_KNOTS
+	u = math.clamp(u, 0, 1)
+	for i = 2, #knots do
+		local a, b = knots[i - 1], knots[i]
+		if u <= b[1] then
+			local t = (u - a[1]) / (b[1] - a[1])
+			return lerp(a[2], b[2], t)
+		end
+	end
+	return knots[#knots][2]
+end
+
+--- Service history tier for a rolled care value: "full", "part" or "none".
+function Valuation.getServiceHistory(care)
+	if care >= Valuation.HISTORY_FULL_MIN_CARE then
+		return "full"
+	end
+	if care < Valuation.HISTORY_NONE_MAX_CARE then
+		return "none"
+	end
+	return "part"
+end
+
+function Valuation.getHistoryFactor(care)
+	local tier = Valuation.getServiceHistory(care)
+	if tier == "full" then
+		return Valuation.HISTORY_FULL_FACTOR
+	end
+	if tier == "none" then
+		return Valuation.HISTORY_NONE_FACTOR
+	end
+	return Valuation.HISTORY_PART_FACTOR
+end
+
+-- ------------------------------------------------------------------ brand strength
+
+-- storeItem.brandIndex -> price factor. Built once after the store is complete, alongside the
+-- rarity build; empty until then, and getBrandFactor answers 1.0 for anything unknown, so the
+-- worst failure mode is "brand has no effect".
+Valuation.brandFactorByIndex = {}
+
+--- Walk the store once and rank every brand by the breadth of its listable range.
+---
+--- ⚠ MUST RUN AFTER onFinishedLoading, like Rarity:build and for the same reason — mod and map
+--- store items are still registering during loadMap, and a brand table built early would misrank
+--- exactly the modded brands it exists to classify.
+function Valuation.buildBrandStrength()
+	Valuation.brandFactorByIndex = {}
+
+	local countByBrand = {}
+	for _, storeItem in ipairs(g_storeManager:getItems()) do
+		if Rarity.getIsListable(storeItem) and storeItem.brandIndex ~= nil then
+			countByBrand[storeItem.brandIndex] = (countByBrand[storeItem.brandIndex] or 0) + 1
+		end
+	end
+
+	local brands = {}
+	for brandIndex, count in pairs(countByBrand) do
+		table.insert(brands, { index = brandIndex, count = count })
+	end
+	-- Ties broken on index so the ranking is stable run to run.
+	table.sort(brands, function(a, b)
+		if a.count == b.count then
+			return a.index < b.index
+		end
+		return a.count < b.count
+	end)
+
+	local n = #brands
+	for rankPos, brand in ipairs(brands) do
+		local rank = n > 1 and (rankPos - 1) / (n - 1) or 0.5
+		Valuation.brandFactorByIndex[brand.index] =
+			lerp(Valuation.BRAND_FACTOR_MIN, Valuation.BRAND_FACTOR_MAX, rank)
+	end
+
+	Logging.info("[AgroTrader] Brand strength built: %d brands ranked", n)
+end
+
+function Valuation.getBrandFactor(storeItem)
+	if storeItem.brandIndex == nil then
+		return 1.0
+	end
+	return Valuation.brandFactorByIndex[storeItem.brandIndex] or 1.0
+end
+
+-- ------------------------------------------------------------------- market index
+
+--- The market's mood right now, as a price multiplier for the whole used market.
+---
+--- Averages the game's own seasonal price factor across every fill type it shows on the price
+--- table, at the CURRENT PERIOD with a fixed mid-period alpha — so the index moves only when the
+--- in-game month turns, never mid-advert-view within a month. Deterministic on both sides of a
+--- connection: the factors are fixed data (FillTypeDesc.lua:76-85) and currentPeriod is synced
+--- game state, so nothing needs streaming.
+---
+--- A price can still legitimately move if the month turns while an advert stands — that is the
+--- market moving, and the server's regenerated price at purchase is always the one charged.
+function Valuation.getMarketIndex()
+	if g_currentMission == nil or g_currentMission.economyManager == nil
+		or g_currentMission.environment == nil or g_fillTypeManager == nil then
+		-- Offline harness, or too early in load. A neutral market, never an error.
+		return 1.0
+	end
+
+	local period = g_currentMission.environment.currentPeriod
+	if period == nil then
+		return 1.0
+	end
+
+	local total, count = 0, 0
+	for _, fillType in ipairs(g_fillTypeManager:getFillTypes()) do
+		if fillType.showOnPriceTable and (fillType.pricePerLiter or 0) > 0 then
+			total = total + g_currentMission.economyManager:getFillTypeSeasonalFactor(
+				fillType, period, 0.5)
+			count = count + 1
+		end
+	end
+	if count == 0 then
+		return 1.0
+	end
+
+	local index = 1 + (total / count - 1) * Valuation.MARKET_SWING
+	return math.clamp(index, Valuation.MARKET_INDEX_MIN, Valuation.MARKET_INDEX_MAX)
+end
+
+--- Asking price. The mod's own market model — see the header for what replaced vanilla and why.
 function Valuation.getAskingPrice(storeItem, history)
 	-- ⚠ THE EMPTY TABLE IS LOAD-BEARING. NEVER PASS nil HERE.
 	--
@@ -226,20 +435,38 @@ function Valuation.getAskingPrice(storeItem, history)
 	-- (shop/VehicleSaleSystem.lua:301). Cost one game load to find.
 	local basePrice = StoreItemUtil.getDefaultPrice(storeItem, {})
 
-	-- Same class of hazard one level down: Vehicle.calculateSellPrice reads `storeItem.specs.power`
-	-- straight after calling loadSpecsFromXML (Vehicle.lua:1866-1868), but loadSpecsFromXML leaves
-	-- `specs` nil if the XML fails to open (shop/StoreItemUtil.lua:129-134). A machine with an
-	-- unreadable xml would take the whole load down. An empty table is what a successful load of a
-	-- spec-less item produces anyway, so this only ever substitutes for a failure.
+	-- loadSpecsFromXML leaves `specs` nil if the XML fails to open (shop/StoreItemUtil.lua:129-134),
+	-- and getMotorizedFactor reads it. An empty table is what a successful load of a spec-less item
+	-- produces anyway, so this only ever substitutes for a failure.
 	StoreItemUtil.loadSpecsFromXML(storeItem)
 	if storeItem.specs == nil then
 		storeItem.specs = {}
 	end
-	local repairPrice = Wearable.calculateRepairPrice(basePrice, history.damage)
-	local repaintPrice = Wearable.calculateRepaintPrice(basePrice, history.wear)
 
-	return math.floor(Vehicle.calculateSellPrice(
-		storeItem, history.age, history.operatingTime, basePrice, repairPrice, repaintPrice))
+	-- The market's view of the machine: what life it has left, mildly how old it is, whether its
+	-- paperwork is in order, whose badge it wears, and how flush farming feels this month.
+	local ageFactor = math.max(
+		1 - (history.age / 12) * Valuation.AGE_DISCOUNT_PER_YEAR, Valuation.AGE_FACTOR_FLOOR)
+
+	local asking = basePrice
+		* Valuation.getResidual(history.lifeUsed)
+		* ageFactor
+		* Valuation.getHistoryFactor(history.care or 0.5)
+		* Valuation.getBrandFactor(storeItem)
+		* Valuation.getMarketIndex()
+
+	-- Condition costs the buyer only what fixing it will actually cost THEM — the vanilla repair
+	-- and repaint formulas in full for motorised machines (where ADS collects), a quarter for
+	-- implements (see IMPLEMENT_CONDITION_SHARE).
+	local conditionCost = Wearable.calculateRepairPrice(basePrice, history.damage)
+		+ Wearable.calculateRepaintPrice(basePrice, history.wear)
+	if Valuation.getMotorizedFactor(storeItem) ~= 1.0 then
+		conditionCost = conditionCost * Valuation.IMPLEMENT_CONDITION_SHARE
+	end
+	asking = asking - conditionCost
+
+	return math.floor(math.clamp(asking,
+		basePrice * Valuation.PRICE_FLOOR, basePrice * Valuation.PRICE_CEILING))
 end
 
 -- ----------------------------------------------------------------------- delivery
