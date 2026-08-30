@@ -132,11 +132,19 @@
 		<numLateralItems value="2" />
 	</Profile>
 
-	<Profile name="atListTile" extends="fs25_subCategoryListItem">
+	<!-- ⚠ DELIBERATELY NOT extends="fs25_subCategoryListItem". The old rows used it for "the
+	     selection behaviour a SmoothList expects", but ListItemElement's source shows all list
+	     behaviour lives in the element class, not the profile — the vanilla profile only
+	     contributes the shop's green pointer graphic and its own geometry, and that geometry kept
+	     overriding tile sizes no matter where ours were declared (both the profile route and
+	     element attributes rendered ~110px cells with the photo clipped away). A clean base plus
+	     our own state colours is the whole requirement. -->
+	<Profile name="atListTile" extends="baseReference">
 		<size value="417px 300px" />
 		<imageColor value="0.008023 0.010330 0.015209 1" />
 		<imageHighlightedColor value="0.019382 0.026241 0.039546 1" />
 		<imageSelectedColor value="0.028426 0.102242 0.015996 1" />
+		<imageFocusedColor value="0.019382 0.026241 0.039546 1" />
 	</Profile>
 
 	<!-- Store images are 2:1, so 401x200 shows them undistorted. -->
