@@ -48,7 +48,9 @@ Open the shop and use the **AgroTrader** button in the bottom button bar.
 
 ## Status
 
-**v1.0.0.0, submitted to the ModHub and awaiting testing.** Complete and played in singleplayer.
+**v1.1.0.0.** Complete and played in singleplayer. This version replaces the vanilla trade-in
+pricing with a calibrated used-market model, adds hidden ADS faults on delivered machines,
+rolled factory specifications, and a photo-tile marketplace screen.
 
 Multiplayer is implemented and server-authoritative — the market is derived rather than streamed, so
 every client rebuilds the same list from a shared salt, and the server regenerates a listing from
