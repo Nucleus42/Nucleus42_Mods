@@ -441,7 +441,18 @@ function Valuation.getNonStockOptions(storeItem, configurations)
 			-- Nameless items (many colour entries) have nothing to say on an advert.
 			if index ~= stock and item.name ~= nil and item.name ~= ""
 				and item.name ~= tostring(index) then
-				table.insert(options, item.name)
+				-- Prefixed with the axis title where the game has one, because many option names
+				-- are meaningless alone — the first machine in play testing proudly advertised
+				-- "Spec: Standard", which was a non-stock wheel brand called Standard. "Wheels:
+				-- Standard" at least says what is being claimed.
+				local label = item.name
+				if g_vehicleConfigurationManager ~= nil then
+					local desc = g_vehicleConfigurationManager:getConfigurationDescByName(name)
+					if desc ~= nil and desc.title ~= nil and desc.title ~= "" then
+						label = string.format("%s: %s", desc.title, item.name)
+					end
+				end
+				table.insert(options, label)
 			end
 		end
 	end

@@ -66,14 +66,18 @@
 			     (numLateralItems on the atList profile). The photo is storeItem.imageFilename —
 			     the machine's own shop image, free to draw; the CONFIGURED machine appears in
 			     full 3D on the View-and-buy screen, which is where that work belongs. -->
+			<!-- ⚠ SIZES AND POSITIONS ARE ELEMENT ATTRIBUTES HERE, NOT PROFILE VALUES. The first
+			     version put them on the atTile* profiles and the tiles rendered at the parent
+			     profile's height with the photo clipped out of existence — element attributes
+			     always apply, so the geometry lives here and the profiles keep colours and fonts. -->
 			<SmoothList profile="atList" id="resultsList" position="0px 0px" size="850px 640px"
 				onDoubleClick="onListDoubleClick">
-				<ListItem profile="atListTile">
-					<Bitmap name="tileImage" profile="atTileImage" />
-					<Text name="cellName" profile="atTileName" />
-					<Text name="cellSub" profile="atTileSub" />
-					<Text name="cellPrice" profile="atTilePrice" />
-					<Text name="cellDistance" profile="atTileDistance" />
+				<ListItem profile="atListTile" size="417px 300px">
+					<Bitmap name="tileImage" profile="atTileImage" position="8px 92px" size="401px 200px" />
+					<Text name="cellName" profile="atTileName" position="12px 58px" size="401px 28px" />
+					<Text name="cellSub" profile="atTileSub" position="12px 36px" size="401px 22px" />
+					<Text name="cellPrice" profile="atTilePrice" position="12px 6px" size="240px 30px" />
+					<Text name="cellDistance" profile="atTileDistance" position="255px 8px" size="150px 30px" />
 				</ListItem>
 			</SmoothList>
 			<Slider profile="atListSlider" id="resultsSlider" dataElementId="resultsList" position="854px 0px" />
