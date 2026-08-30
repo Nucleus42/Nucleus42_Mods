@@ -380,9 +380,17 @@ function AgroTraderScreen:populateCellForItemInSection(list, section, index, cel
 		-- ⚠ THE ALPHA RESET IS NOT OPTIONAL. A swapped overlay can come back with alpha 0, and
 		-- GuiOverlay.renderOverlay skips transparent overlays outright — the photo column
 		-- renders as nothing with no error anywhere. Vanilla does exactly this pair of calls
-		-- after every swap (InGameMenuContractsFrame.lua:288-289); it cost three screenshot
-		-- round-trips to find. Keep the two lines together.
+		-- after every swap (InGameMenuContractsFrame.lua:288-289).
 		image:setImageColor(nil, nil, nil, nil, 1)
+
+		-- ⚠ AND THE UV RESET IS WHAT ACTUALLY SHOWS THE PHOTO. Found by the atProbe dump, not
+		-- theory: a baseReference Bitmap gets its flat colour from a SLICE — a one-pixel patch of
+		-- the UI atlas (overlay.sliceId "gui.colorPreset", uvs ~{0.6194, 0.9092, ...}) — and a
+		-- filename swap keeps those sliver UVs, so the "photo" renders as one stretched pixel of
+		-- itself: invisible against the tile. Base uvs cover every state here (the probe showed no
+		-- per-state uvs on this overlay); the sliceId is cleared so nothing re-derives the sliver.
+		image.overlay.sliceId = nil
+		image.overlay.uvs = table.clone(Overlay.DEFAULT_UVS)
 	end
 
 	-- One line, once per session, so a blank photo column diagnoses itself from the log instead
