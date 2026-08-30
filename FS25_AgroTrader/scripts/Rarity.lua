@@ -95,9 +95,14 @@ end
 --- Safe because getSpecsFromXML runs EVERY vehicle spec type's loadFunc regardless of which
 --- specializations the item actually has (StoreItemUtil.lua:145-152), so a nil here genuinely
 --- means "the key was absent from the XML", not "we did not look".
+---
+--- ⚠ EXCEPT WHEN THE AUTHOR WROTE `<power>196-320</power>`. The FLOAT schema parses a range
+--- string to nil, and several mod combines do exactly that — they showed under Attachments at
+--- implement prices (found in play 2026-08-30). Delegated to Valuation.getHasDeclaredPower,
+--- which honours specs.power and falls back to one raw string read of the tag.
 function Rarity.getIsMotorized(storeItem)
 	StoreItemUtil.loadSpecsFromXML(storeItem)
-	return storeItem.specs ~= nil and storeItem.specs.power ~= nil
+	return Valuation.getHasDeclaredPower(storeItem)
 end
 
 local function median(sorted)

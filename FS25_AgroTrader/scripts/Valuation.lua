@@ -233,12 +233,45 @@ function Valuation.range(lo, hi, rng)
 	return lo + ((rng or math.random)() * (hi - lo))
 end
 
+--- Did this machine's author declare engine power at all — even malformed?
+---
+--- ⚠ THE POINT IS MOD COMBINES WITH `<power>196-320</power>`. The schema reads power as a FLOAT
+--- (Motorized.lua:63), so a range string parses to nil and the game quietly treats a £100k+
+--- Lexion as an unmotorised implement — found in play 2026-08-30 as combines listed under
+--- Attachments at implement prices. specs.power is honoured when present; when it is nil, ONE
+--- raw string read of the tag decides: any declared power means motorised, and only machines
+--- with no power tag at all (true implements) stay unmotorised. Cached on the store item, so
+--- the extra XML open happens at most once per machine per session.
+function Valuation.getHasDeclaredPower(storeItem)
+	if storeItem.specs ~= nil and storeItem.specs.power ~= nil then
+		return true
+	end
+
+	if storeItem.agroTraderPowerProbe == nil then
+		local result = false
+		-- Engine functions, absent in the offline harness — there the parsed spec is the truth.
+		if loadXMLFile ~= nil and storeItem.xmlFilename ~= nil then
+			local xmlId = loadXMLFile("agroTraderPowerProbe", storeItem.xmlFilename)
+			if xmlId ~= nil and xmlId ~= 0 then
+				local raw = getXMLString(xmlId, "vehicle.storeData.specs.power")
+				result = raw ~= nil and raw ~= ""
+				delete(xmlId)
+			end
+		end
+		storeItem.agroTraderPowerProbe = result
+	end
+
+	return storeItem.agroTraderPowerProbe
+end
+
 --- Motorized machines wear their value on hours more slowly than implements do.
---- Mirrors Giants' own test exactly (Vehicle.lua:1866-1869): the factor is 1.3 when the store
---- item declares no <specs><power>. Kept in one place so ours can never disagree with theirs.
+---
+--- Vanilla's own test (Vehicle.lua:1866-1869) is `specs.power == nil` -> 1.3; ours adds the
+--- malformed-power fallback above, deliberately DIVERGING from vanilla for machines vanilla
+--- misreads — being right about what a machine is beats matching vanilla's parsing accident.
 function Valuation.getMotorizedFactor(storeItem)
 	StoreItemUtil.loadSpecsFromXML(storeItem)
-	if storeItem.specs ~= nil and storeItem.specs.power ~= nil then
+	if Valuation.getHasDeclaredPower(storeItem) then
 		return 1.0
 	end
 	return 1.3
