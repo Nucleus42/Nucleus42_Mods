@@ -32,6 +32,7 @@ function AgroTraderScreen.new(market, rarity)
 
 	-- Rebuilt on open, because the store can differ between saves.
 	self.styleOptions = {}
+	self.styleValues = {}
 	self.makeOptions = {}
 
 	self.returnScreenClass = nil
@@ -101,6 +102,17 @@ end
 
 -- --------------------------------------------------------------------- filters
 
+--- The shop's own display title for a category name — "Combines" for "harvesters" — falling
+--- back to the raw name for anything a mod declared without registering.
+function AgroTraderScreen.getCategoryTitle(categoryName)
+	local category = g_storeManager ~= nil
+		and g_storeManager:getCategoryByName(categoryName) or nil
+	if category ~= nil and category.title ~= nil and category.title ~= "" then
+		return category.title
+	end
+	return categoryName
+end
+
 --- Populate the style and make cyclers from what the market can actually offer.
 ---
 --- Derived from the live store rather than hard-coded, for the same reason the rarity model is:
@@ -127,15 +139,29 @@ function AgroTraderScreen:buildFilterOptions()
 		end
 	end
 
+	-- Two parallel arrays: what the player reads (the shop's own localized title — "Combines",
+	-- not "HARVESTERS") and what the filter compares (the raw categoryName). Index-aligned, with
+	-- slot 1 being "Any style" / nil. The split exists because two categories could in principle
+	-- share a title, and the filter must never conflate them.
 	self.styleOptions = { "Any style" }
+	self.styleValues = { false }
+	local sortedStyles = {}
 	for category in pairs(styles) do
-		table.insert(self.styleOptions, category)
+		table.insert(sortedStyles, {
+			name = category,
+			title = AgroTraderScreen.getCategoryTitle(category),
+		})
 	end
-	table.sort(self.styleOptions, function(a, b)
-		if a == "Any style" then return true end
-		if b == "Any style" then return false end
-		return a < b
+	table.sort(sortedStyles, function(a, b)
+		if a.title == b.title then
+			return a.name < b.name
+		end
+		return a.title < b.title
 	end)
+	for _, entry in ipairs(sortedStyles) do
+		table.insert(self.styleOptions, entry.title)
+		table.insert(self.styleValues, entry.name)
+	end
 
 	self.makeOptions = { "Any make" }
 	for title in pairs(makes) do
@@ -160,7 +186,7 @@ function AgroTraderScreen:buildFilterOptions()
 	-- was mine, and it was the whole reason Style and Make forgot themselves while Distance, Hours
 	-- and Price did not: those three are only ever set in onCreateFilters, which runs once.
 	self.filterStyle:setTexts(self.styleOptions)
-	self.filterStyle:setState(AgroTraderScreen.indexOf(self.styleOptions, self.rememberedStyle), false)
+	self.filterStyle:setState(AgroTraderScreen.indexOf(self.styleValues, self.rememberedStyle), false)
 
 	self.filterMake:setTexts(self.makeOptions)
 	self.filterMake:setState(AgroTraderScreen.indexOf(self.makeOptions, self.rememberedMake), false)
@@ -231,7 +257,9 @@ function AgroTraderScreen:refresh()
 	local wantVehicles = self:getWantVehicles()
 
 	local styleIndex = self.filterStyle:getState()
-	local style = styleIndex > 1 and self.styleOptions[styleIndex] or nil
+	-- styleValues, not styleOptions: the filter compares raw category names; the options array
+	-- holds the localized titles the player reads.
+	local style = styleIndex > 1 and self.styleValues[styleIndex] or nil
 
 	local makeIndex = self.filterMake:getState()
 	local make = makeIndex > 1 and self.makeOptions[makeIndex] or nil
@@ -472,7 +500,7 @@ function AgroTraderScreen:setSelected(listing)
 
 	self.detailName:setText(storeItem.name or "?")
 	self.detailBrand:setText((brand ~= nil and brand.title or "") .. "  ·  "
-		.. (storeItem.categoryName or ""))
+		.. AgroTraderScreen.getCategoryTitle(storeItem.categoryName or ""))
 	self.detailPrice:setText(g_i18n:formatMoney(listing.price, 0, true, true))
 
 	self.detailStory:setText(AgroTraderScreen.getStory(listing))
