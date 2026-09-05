@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<modDesc descVersion="108">
+    <author>Nucleus42</author>
+    <version>0.1.0.0</version>
+    <title>
+        <en>Implement Damage System</en>
+    </title>
+    <description>
+        <en><![CDATA[ADS-style wear, breakdowns and servicing for attachments and non-motorised machines.
+
+Implements wear with use, develop staged breakdowns with real effects (speed caps, blocked turn-on, narrowed working width, slow unloading), and are serviced, inspected, repaired or overhauled through the workshop screen. Work orders take game time and cost money; sell price follows true condition.
+
+Console commands:
+  idsDump - print IDS state for all tracked implements
+  idsSet <service|condition> <0..1> - set level on the currently attached implement
+  idsBreak <ID> [stage] - force a breakdown on the attached implement
+  idsFix [ID] - remove breakdowns from the attached implement
+  idsStatus - list implements in the workshop and known unrepaired faults]]></en>
+    </description>
+    <iconFilename>icon_ids.dds</iconFilename>
+    <multiplayer supported="false"/>
+    <extraSourceFiles>
+        <sourceFile filename="scripts/IDS_Main.lua"/>
+    </extraSourceFiles>
+</modDesc>

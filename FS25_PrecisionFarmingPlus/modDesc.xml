@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<modDesc descVersion="110">
+    <author>Nucleus42</author>
+    <version>1.0.0.0</version>
+    <title>
+        <en>Precision Farming Plus</en>
+    </title>
+    <description>
+        <en><![CDATA[Improvement addon for Precision Farming. Requires FS25_precisionFarming.
+
+- Grass rolling counts as mechanical (chemical-free) weed control in the environmental score
+- Mulching counts as mechanical weed control
+- Slurry, digestate and manure apply nitrogen up to the crop's target level instead of a fixed rate
+- New "Crop Rotation" environmental score category: rotating crops (and growing legumes) is rewarded, monoculture is penalised
+- Environmental score now scales sale prices from 50% (score 0) through 100% (score 50) up to 120% (score 100)
+]]></en>
+    </description>
+    <iconFilename>icon_precisionFarmingPlus.dds</iconFilename>
+    <multiplayer supported="true"/>
+
+    <extraSourceFiles>
+        <sourceFile filename="scripts/PrecisionFarmingPlus.lua"/>
+    </extraSourceFiles>
+
+    <l10n>
+        <text name="pfPlus_environmentalScore_rotation">
+            <en>Crop rotation</en>
+            <de>Fruchtfolge</de>
+        </text>
+        <text name="pfPlus_fieldInfo_rotation">
+            <en>Crop rotation</en>
+            <de>Fruchtfolge</de>
+        </text>
+        <text name="pfPlus_ecoPayment">
+            <en>Environmental subsidy</en>
+            <de>Umweltprämie</de>
+        </text>
+    </l10n>
+</modDesc>
