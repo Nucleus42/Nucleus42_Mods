@@ -118,6 +118,9 @@ function Purchase.toSaleItem(listing)
 		-- rebuilt from the regenerated listing in readStream, so a client cannot forge them.
 		agroTraderCare = listing.care,
 		agroTraderHistory = listing.serviceHistory,
+		-- Set HERE so the server's readStream rebuild carries it too: markPurchased stores this
+		-- period against the key, and prunePurchased erases period-0 records on the next save.
+		agroTraderPeriod = listing.period,
 		[Purchase.MARKER] = listing.key,
 
 		-- ⚠ MULTIPLAYER. BuyVehicleData streams the sale id as UInt8 with 0 meaning "no sale item"
@@ -247,12 +250,17 @@ function Purchase.onBought(self, vehicles, loadingState)
 		period = self.saleItem.agroTraderPeriod or 0,
 	})
 
-	-- What the seller did not mention. Server-only: ADS state is authoritative there, and this
-	-- is where the spawned vehicle objects actually live. Implements and non-ADS installs are
-	-- skipped inside enqueue.
+	-- What the seller did not mention. Server-only: ADS/IDS state is authoritative there, and
+	-- this is where the spawned vehicle objects actually live. Each overlay skips vehicles that
+	-- are not its kind — ADS takes motorised machines (queued, because ADS seeds late), IDS
+	-- takes implements (direct, because IDS seeded during load). A vehicle without either spec
+	-- keeps the graded price floor as its only consequence.
 	if g_currentMission ~= nil and g_currentMission:getIsServer() and vehicles ~= nil then
 		for _, vehicle in ipairs(vehicles) do
 			AgroTraderADS.enqueue(vehicle,
+				self.saleItem.damage, self.saleItem.agroTraderCare,
+				self.saleItem.agroTraderHistory, self.saleItem[Purchase.MARKER])
+			AgroTraderIDS.apply(vehicle,
 				self.saleItem.damage, self.saleItem.agroTraderCare,
 				self.saleItem.agroTraderHistory, self.saleItem[Purchase.MARKER])
 		end
@@ -480,13 +488,13 @@ function Purchase.readStream(self, superFunc, streamId, connection)
 		return
 	end
 
-	local market = AgroTrader ~= nil and AgroTrader.market or nil
-	if market == nil then
+	local liveMarket = AgroTrader ~= nil and AgroTrader.market or nil
+	if liveMarket == nil then
 		Logging.error("[AgroTrader] Purchase arrived with no market to resolve it against.")
 		return
 	end
 
-	local listing = market:getListingByKey(key)
+	local listing = liveMarket:getListingByKey(key)
 	if listing == nil then
 		-- Already sold, stale period, or fabricated. Flagged so BuyVehicleEvent refuses it.
 		Logging.warning("[AgroTrader] Refusing purchase: advert '%s' is not on the market.", key)
@@ -511,6 +519,12 @@ function Purchase.isValid(self, superFunc)
 end
 
 function Purchase.install()
+	-- loadMap runs once per save load; these hooks stack, so install once per session.
+	if Purchase.isInstalled then
+		return
+	end
+	Purchase.isInstalled = true
+
 	ShopConfigScreen.processStoreItemConfigurations = Utils.overwrittenFunction(
 		ShopConfigScreen.processStoreItemConfigurations, Purchase.processStoreItemConfigurations)
 

@@ -5,9 +5,11 @@ AgroTrader = {}
 
 AgroTrader.MOD_NAME = g_currentModName
 AgroTrader.MOD_DIR = g_currentModDirectory
--- Printed to the log on load. Keep in step with <version> in modDesc.xml — a tester reading the
--- log against the mod list is exactly who notices when these disagree.
-AgroTrader.VERSION = "1.1.0.0"
+-- Printed to the log on load. Read from modDesc.xml so it can never disagree with the mod list.
+AgroTrader.VERSION = (function()
+	local mod = g_modManager ~= nil and g_modManager:getModByName(g_currentModName) or nil
+	return mod ~= nil and mod.version or "unknown"
+end)()
 
 -- Order matters: Market reads constants off Valuation and Rarity at call time, and Market
 -- registers its own MessageType at source time.
@@ -21,6 +23,7 @@ source(AgroTrader.MOD_DIR .. "scripts/events/AgroTraderStateEvent.lua")
 source(AgroTrader.MOD_DIR .. "scripts/events/AgroTraderSoldEvent.lua")
 
 source(AgroTrader.MOD_DIR .. "scripts/DeliveryADS.lua")
+source(AgroTrader.MOD_DIR .. "scripts/DeliveryIDS.lua")
 source(AgroTrader.MOD_DIR .. "scripts/Purchase.lua")
 source(AgroTrader.MOD_DIR .. "scripts/gui/AgroTraderScreen.lua")
 source(AgroTrader.MOD_DIR .. "scripts/ShopHook.lua")

@@ -51,6 +51,14 @@ function AgroTraderScreen.register(market, rarity)
 		return nil
 	end
 
+	-- g_gui outlives the save: register once per session, and on later save loads just point
+	-- the existing screen at the new save's market and rarity.
+	if AgroTraderScreen.instance ~= nil then
+		AgroTraderScreen.instance.market = market
+		AgroTraderScreen.instance.rarity = rarity
+		return AgroTraderScreen.instance
+	end
+
 	g_gui:loadProfiles(AgroTrader.MOD_DIR .. "gui/guiProfiles.xml")
 
 	local screen = AgroTraderScreen.new(market, rarity)

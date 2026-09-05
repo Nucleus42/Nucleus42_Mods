@@ -393,6 +393,24 @@ function Valuation.getResidual(u)
 	return knots[#knots][2]
 end
 
+--- Condition -> price multiplier for OTHER mods' sell prices. Pure, no game state.
+---
+--- FS25_ImplementDamageSystem calls this (live object, pcall-guarded on its side) to scale an
+--- implement's sell-back price by its true condition. The point is closing an arbitrage gap:
+--- our asking prices ride the residual curve, so a worn implement lists near its floor — if
+--- another mod's sell-back paid a flatter rate (IDS's standalone 0.5 + 0.5*condition), buying
+--- our cheapest wrecks and selling them straight back would print money. Serving both sides
+--- the same curve makes buy and sell move together by construction.
+---
+--- Condition is read as remaining life (1 - condition = life consumed) and normalised so a
+--- pristine machine keeps full value; the floor matches FLOOR_MAX territory rather than zero,
+--- because a working machine is never nearly free — same principle as the asking floor.
+function Valuation.getConditionPriceMultiplier(conditionLevel)
+	local lifeUsed = 1 - math.clamp(conditionLevel or 1, 0, 1)
+	local pristine = Valuation.getResidual(0)
+	return math.clamp(Valuation.getResidual(lifeUsed) / pristine, Valuation.FLOOR_MAX, 1.0)
+end
+
 --- Service history tier for a rolled care value: "full", "part" or "none".
 function Valuation.getServiceHistory(care)
 	if care >= Valuation.HISTORY_FULL_MIN_CARE then
