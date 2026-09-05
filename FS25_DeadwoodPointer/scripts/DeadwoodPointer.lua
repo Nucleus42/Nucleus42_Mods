@@ -197,10 +197,12 @@ local function missionIsOurs(mission)
         return false
     end
     local farmId = playerFarmId()
-    if mission.farmId == nil then
+    if farmId == nil or mission.farmId == nil then
+        -- No farm id means ownership cannot be established, and an unowned mission must never
+        -- be marked -- otherwise every player would briefly see every farm's contract trees.
         return false
     end
-    if farmId ~= nil and mission.farmId ~= farmId then
+    if mission.farmId ~= farmId then
         return false
     end
     return true
@@ -313,21 +315,88 @@ local function missionIsDeadwood(mission)
     return type(mission.deadTrees) == "table"
 end
 
-function DeadwoodPointer.rescan()
-    dwp.targets = {}
+-- ============================================================================
+-- Provider registry
+--
+-- The deadwood scan above is one SOURCE of things to mark; other mods can be another. A provider
+-- is a function returning an array of { node = <sceneNode>, label = <string or nil> } — the node
+-- is marked exactly like a contract tree, and the label (if any) is drawn under the distance.
+--
+-- Reachable cross-mod via _G["FS25_DeadwoodPointer"].DeadwoodPointer.registerProvider. Every
+-- provider call is pcall-guarded and every entry re-proved with entityExists before use, so a
+-- misbehaving provider costs its own markers and nothing else. The built-in mission scan is
+-- itself just the "deadwood" provider, registered at the bottom of this file.
+--
+-- Providers are polled on the same cadence as the mission scan: whenever the mission signature
+-- moves, and unconditionally every SAFETY_INTERVAL — so an external provider's changes appear
+-- within 30s at worst, immediately when contracts are also moving. Registering forces a rescan.
+-- ============================================================================
+
+dwp.providers = {}               -- name -> fn() -> { {node=, label=}, ... }
+
+function DeadwoodPointer.registerProvider(name, fn)
+    if type(name) ~= "string" or type(fn) ~= "function" then
+        return false
+    end
+    dwp.providers[name] = fn
+    dwp.lastSignature = nil      -- force a rescan on the next tick
+    return true
+end
+
+function DeadwoodPointer.unregisterProvider(name)
+    dwp.providers[name] = nil
+    dwp.lastSignature = nil
+end
+
+-- The built-in source: standing trees of our running deadwood contracts. No labels — the glyph
+-- and distance already say everything a deadwood tree has to say.
+local function deadwoodProvider()
     dwp.lastScanNodes = 0
     dwp.lastScanMissions = 0
 
     local mm = g_missionManager
     if mm == nil or type(mm.missions) ~= "table" then
-        return 0
+        return {}
     end
 
-    local out = {}
+    local nodes = {}
     for _, mission in ipairs(mm.missions) do
         if type(mission) == "table" and missionIsDeadwood(mission) and missionIsOurs(mission) then
             dwp.lastScanMissions = dwp.lastScanMissions + 1
-            pcall(collectFromDeadTrees, mission, out)
+            pcall(collectFromDeadTrees, mission, nodes)
+        end
+    end
+
+    local out = {}
+    for _, node in ipairs(nodes) do
+        out[#out + 1] = { node = node }
+    end
+    return out
+end
+
+function DeadwoodPointer.rescan()
+    dwp.targets = {}
+
+    -- Sorted names, so target order (and therefore draw order) is stable run to run.
+    local names = {}
+    for name in pairs(dwp.providers) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+
+    local out = {}
+    for _, name in ipairs(names) do
+        local ok, entries = pcall(dwp.providers[name])
+        if ok and type(entries) == "table" then
+            for _, entry in ipairs(entries) do
+                if type(entry) == "table" and type(entry.node) == "number" and entry.node ~= 0
+                    and (entityExists == nil or entityExists(entry.node)) then
+                    out[#out + 1] = { node = entry.node,
+                        label = type(entry.label) == "string" and entry.label or nil }
+                end
+            end
+        elseif not ok then
+            Logging.warning("[DeadwoodPointer] Provider '%s' failed: %s", name, tostring(entries))
         end
     end
 
@@ -379,11 +448,17 @@ local function pruneTargets()
         return
     end
     local kept = {}
-    for _, node in ipairs(dwp.targets) do
+    for _, target in ipairs(dwp.targets) do
+        local node = target.node
         local alive = (entityExists == nil or entityExists(node))
-            and not (getIsSplitShapeSplit ~= nil and getIsSplitShapeSplit(node))
+        if alive and getIsSplitShapeSplit ~= nil and getHasClassId ~= nil and ClassIds ~= nil
+            and getHasClassId(node, ClassIds.MESH_SPLIT_SHAPE) then
+            -- Split-shape targets only: a provider may hand us a plain transform node (a growing
+            -- sapling, say), and getIsSplitShapeSplit on one of those is not a question to ask.
+            alive = not getIsSplitShapeSplit(node)
+        end
         if alive then
-            kept[#kept + 1] = node
+            kept[#kept + 1] = target
         end
     end
     dwp.targets = kept
@@ -448,13 +523,15 @@ function DeadwoodPointer:update(dt)
     if g_currentMission == nil or g_missionManager == nil then
         return
     end
+    -- Pruned BEFORE the dedicated/no-player return below: draw() can still run against ids
+    -- collected earlier, and a deleted node must never survive a frame to reach it.
+    pruneTargets()
+
     -- Nothing to draw for on a dedicated server, so don't scan. draw() is never called there, but
     -- update() is, and it would happily rescan every time a contract ticked over for no one.
     if g_dedicatedServer ~= nil or g_localPlayer == nil then
         return
     end
-
-    pruneTargets()
 
     dwp.pulseTimer = (dwp.pulseTimer + dt) % dwp.PULSE_PERIOD
     dwp.sigTimer = dwp.sigTimer + dt
@@ -555,43 +632,52 @@ function DeadwoodPointer:draw()
 
     local nearest = nil
 
-    for _, node in ipairs(dwp.targets) do
-        local wx, wy, wz = getWorldTranslation(node)
-        local distance = (calcDistanceFrom ~= nil) and calcDistanceFrom(node, cam) or 0
-        if distance <= 0 then
-            distance = 1
-        end
-        if nearest == nil or distance < nearest then
-            nearest = distance
-        end
+    for _, target in ipairs(dwp.targets) do
+        local node = target.node
+        -- Re-proved here, not just in pruneTargets: a shape can be deleted between the prune in
+        -- update() and this draw, and getWorldTranslation on a dead id is a hard error.
+        if entityExists == nil or entityExists(node) then
+            local wx, wy, wz = getWorldTranslation(node)
+            local distance = (calcDistanceFrom ~= nil) and calcDistanceFrom(node, cam) or 0
+            if distance <= 0 then
+                distance = 1
+            end
+            if nearest == nil or distance < nearest then
+                nearest = distance
+            end
 
-        local sx, sy, sz = project(wx, wy + dwp.Y_OFFSET, wz)
-        local onScreen = sz <= 1 and sx > 0 and sx < 1 and sy > 0 and sy < 1
+            local sx, sy, sz = project(wx, wy + dwp.Y_OFFSET, wz)
+            local onScreen = sz <= 1 and sx > 0 and sx < 1 and sy > 0 and sy < 1
 
-        if onScreen then
-            local size = dwp.BASE_FONT_SIZE / distance * fovFactor
-            if size < dwp.MIN_FONT_SIZE then size = dwp.MIN_FONT_SIZE end
-            if size > dwp.MAX_FONT_SIZE then size = dwp.MAX_FONT_SIZE end
-            size = size * pulse
+            if onScreen then
+                local size = dwp.BASE_FONT_SIZE / distance * fovFactor
+                if size < dwp.MIN_FONT_SIZE then size = dwp.MIN_FONT_SIZE end
+                if size > dwp.MAX_FONT_SIZE then size = dwp.MAX_FONT_SIZE end
+                size = size * pulse
 
-            renderTextOutlined(sx, sy, size, MARKER_GLYPH, dwp.COLOR)
-            renderTextOutlined(sx, sy - size * 0.85, size * 0.5,
-                string.format("%dm", math.floor(distance + 0.5)), dwp.COLOR)
-        else
-            local ex, ey, arrow = drawEdgeArrow(sx, sy, sz > 1)
-            local size = dwp.EDGE_FONT_SIZE * pulse
-            renderTextOutlined(ex, ey, size, arrow, dwp.COLOR_EDGE)
-            renderTextOutlined(ex, ey - size * 0.9, size * 0.55,
-                string.format("%dm", math.floor(distance + 0.5)), dwp.COLOR_EDGE)
+                renderTextOutlined(sx, sy, size, MARKER_GLYPH, dwp.COLOR)
+                renderTextOutlined(sx, sy - size * 0.85, size * 0.5,
+                    string.format("%dm", math.floor(distance + 0.5)), dwp.COLOR)
+                if target.label ~= nil then
+                    renderTextOutlined(sx, sy - size * 1.3, size * 0.45, target.label, dwp.COLOR)
+                end
+            else
+                local ex, ey, arrow = drawEdgeArrow(sx, sy, sz > 1)
+                local size = dwp.EDGE_FONT_SIZE * pulse
+                renderTextOutlined(ex, ey, size, arrow, dwp.COLOR_EDGE)
+                renderTextOutlined(ex, ey - size * 0.9, size * 0.55,
+                    string.format("%dm", math.floor(distance + 0.5)), dwp.COLOR_EDGE)
+            end
         end
     end
 
     -- Summary: the thing that actually answers "how much is left and which way".
     local summary
     if nearest ~= nil then
-        summary = string.format("Deadwood contract: %d left  -  nearest %dm", #dwp.targets, math.floor(nearest + 0.5))
+        summary = string.format(g_i18n:getText("dwPointer_summaryNearest"),
+            #dwp.targets, math.floor(nearest + 0.5))
     else
-        summary = string.format("Deadwood contract: %d left", #dwp.targets)
+        summary = string.format(g_i18n:getText("dwPointer_summary"), #dwp.targets)
     end
     renderTextOutlined(0.5, 0.952, 0.020, summary, dwp.COLOR)
 
@@ -667,50 +753,19 @@ function DeadwoodPointer:consoleDebug()
                     standing, pending, shapeMapCount,
                     shapeMapCount == 0 and " (EMPTY - normal on a client)" or "",
                     tostring(m.resolveDeadTreeServerIds))
-
-                local keys = {}
-                for k, v in pairs(m) do
-                    keys[#keys + 1] = string.format("%s(%s)", tostring(k), type(v))
-                end
-                table.sort(keys)
-                add("  owns trees; keys: %s", table.concat(keys, " "))
-
-                -- Structure of the tables the fast path reads, so the guesswork can be replaced
-                -- with a direct field read once we can see their shape.
-                for _, field in ipairs({"deadTrees", "deadTreeShapeToTree", "deadTreeCutSplitShapes", "spot"}) do
-                    local t = m[field]
-                    if type(t) == "table" then
-                        local n = 0
-                        for _ in pairs(t) do n = n + 1 end
-                        add("  %s: %d entr(y/ies)", field, n)
-                        local limit = (field == "spot") and 20 or 3
-                        local shown = 0
-                        for k, v in pairs(t) do
-                            if shown >= limit then
-                                add("    ...")
-                                break
-                            end
-                            if type(v) == "table" then
-                                local inner = {}
-                                for ik, iv in pairs(v) do
-                                    inner[#inner + 1] = string.format("%s=%s(%s)", tostring(ik), tostring(iv), type(iv))
-                                end
-                                table.sort(inner)
-                                add("    [%s(%s)] -> {%s}", tostring(k), type(k), table.concat(inner, " "))
-                            else
-                                add("    [%s(%s)] -> %s(%s)", tostring(k), type(k), tostring(v), type(v))
-                            end
-                            shown = shown + 1
-                        end
-                    elseif t ~= nil then
-                        add("  %s: %s(%s)", field, tostring(t), type(t))
-                    end
-                end
             end
         end
     end
 
-    for i, node in ipairs(dwp.targets) do
+    local providerNames = {}
+    for name in pairs(dwp.providers) do
+        providerNames[#providerNames + 1] = name
+    end
+    table.sort(providerNames)
+    add("providers: %s", table.concat(providerNames, ", "))
+
+    for i, target in ipairs(dwp.targets) do
+        local node = target.node
         local wx, wy, wz = getWorldTranslation(node)
         local p1, p2, p3 = 0, 0, 0
         if getSaveableSplitShapeId ~= nil then
@@ -718,12 +773,17 @@ function DeadwoodPointer:consoleDebug()
             if ok then p1, p2, p3 = a or 0, b or 0, c or 0 end
         end
         local splitTypeName = "?"
-        if g_splitShapeManager ~= nil and g_splitShapeManager.getSplitTypeNameByIndex ~= nil then
+        -- Provider targets may be plain transform nodes, not split shapes; getSplitType is only
+        -- a question for the latter.
+        if g_splitShapeManager ~= nil and g_splitShapeManager.getSplitTypeNameByIndex ~= nil
+            and getHasClassId ~= nil and ClassIds ~= nil
+            and getHasClassId(node, ClassIds.MESH_SPLIT_SHAPE) then
             local ok, n = pcall(g_splitShapeManager.getSplitTypeNameByIndex, g_splitShapeManager, getSplitType(node))
             if ok then splitTypeName = tostring(n) end
         end
-        add("target[%d] node=%s type=%s pos=%.1f/%.1f/%.1f saveableId=%s/%s/%s",
-            i, tostring(node), splitTypeName, wx, wy, wz, tostring(p1), tostring(p2), tostring(p3))
+        add("target[%d] node=%s type=%s label=%s pos=%.1f/%.1f/%.1f saveableId=%s/%s/%s",
+            i, tostring(node), splitTypeName, tostring(target.label), wx, wy, wz,
+            tostring(p1), tostring(p2), tostring(p3))
     end
 
     return table.concat(lines, "\n")
@@ -814,5 +874,9 @@ if PlayerInputComponent ~= nil and PlayerInputComponent.registerGlobalPlayerActi
     PlayerInputComponent.registerGlobalPlayerActionEvents = Utils.appendedFunction(
         PlayerInputComponent.registerGlobalPlayerActionEvents, registerGlobalActionEvents)
 end
+
+-- The mission scan is itself just a provider — registered here so rescan() has exactly one shape
+-- of source to think about, and external providers are not a special case.
+DeadwoodPointer.registerProvider("deadwood", deadwoodProvider)
 
 addModEventListener(DeadwoodPointer)

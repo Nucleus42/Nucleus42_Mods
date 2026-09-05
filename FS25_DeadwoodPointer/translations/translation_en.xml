@@ -4,5 +4,7 @@
         <text name="input_DWPOINTER_TOGGLE" text="Toggle Deadwood Pointer" />
         <text name="dwPointer_on" text="Deadwood Pointer ON" />
         <text name="dwPointer_off" text="Deadwood Pointer OFF" />
+        <text name="dwPointer_summaryNearest" text="Deadwood contract: %d left  -  nearest %dm" />
+        <text name="dwPointer_summary" text="Deadwood contract: %d left" />
     </texts>
 </l10n>
