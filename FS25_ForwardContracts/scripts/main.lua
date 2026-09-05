@@ -5,9 +5,11 @@ ForwardContracts = {}
 
 ForwardContracts.MOD_NAME = g_currentModName
 ForwardContracts.MOD_DIR = g_currentModDirectory
--- Printed to the log on load. Keep in step with <version> in modDesc.xml — a tester reading
--- the log against the mod list is exactly who notices when these disagree.
-ForwardContracts.VERSION = "1.0.0.0"
+-- Printed to the log on load. Read from modDesc.xml so it can never disagree with the mod list.
+ForwardContracts.VERSION = (function()
+	local mod = g_modManager ~= nil and g_modManager:getModByName(g_currentModName) or nil
+	return mod ~= nil and mod.version or "unknown"
+end)()
 
 -- Order matters: Offers reads constants off ContractStore at source time.
 source(ForwardContracts.MOD_DIR .. "scripts/DeliveryWatch.lua")
@@ -174,6 +176,72 @@ function ForwardContracts.onFinishedLoading()
 
 	Logging.info("[ForwardContracts] %d contract(s), %d client(s) restored, board built",
 		#mod.contractStore.contracts, #mod.clientRegistry.clients)
+
+	mod.registerDeadwoodProvider()
+end
+
+-- ---------------------------------------------------------------------------
+-- Deadwood Pointer bridge (optional, one-way)
+--
+-- When FS25_DeadwoodPointer is installed, its in-world markers can carry our contract stands
+-- too: every tree PlantingWatch credited against a live forestry contract gets a marker labelled
+-- with the species and the planting progress, so the player can find the stand they are growing
+-- for the contract. Detection via g_modIsLoaded, reach via _G["FS25_DeadwoodPointer"] live
+-- objects at call time — never a mirrored table, never a hard dependency: with the pointer
+-- absent nothing here runs, and with us absent the pointer is unchanged.
+-- ---------------------------------------------------------------------------
+
+ForwardContracts.DWP_MOD = "FS25_DeadwoodPointer"
+
+--- What the pointer should mark for us right now. Resolves everything through the live
+--- ForwardContracts globals at call time, so after deleteMap it degrades to an empty list.
+function ForwardContracts.collectContractTrees()
+	local mod = ForwardContracts
+	local store = mod.contractStore
+	local watch = mod.plantingWatch
+	if not mod.isEnabled or store == nil or watch == nil then
+		return {}
+	end
+
+	local out = {}
+	for _, contract in ipairs(store.contracts or {}) do
+		if not contract.isComplete and contract.speciesName ~= nil then
+			local label = string.format("%s %d/%d", contract.speciesName,
+				contract.planted or 0, contract.plantingFloor or 0)
+			for _, node in ipairs(watch:getPlantedNodes(contract.speciesName)) do
+				out[#out + 1] = { node = node, label = label }
+			end
+		end
+	end
+	return out
+end
+
+--- Called from onFinishedLoading — the pointer registers its own state in loadMap, so by now its
+--- registry exists if the mod does. pcall-guarded: a pointer API change costs the markers only.
+function ForwardContracts.registerDeadwoodProvider()
+	local mod = ForwardContracts
+	if mod.dwpProviderRegistered then
+		return
+	end
+	if g_modIsLoaded == nil or not g_modIsLoaded[mod.DWP_MOD] then
+		return
+	end
+
+	local env = _G[mod.DWP_MOD]
+	local pointer = env ~= nil and env.DeadwoodPointer or nil
+	if pointer == nil or pointer.registerProvider == nil then
+		return
+	end
+
+	local ok, registered = pcall(pointer.registerProvider, "forwardContracts",
+		ForwardContracts.collectContractTrees)
+	if ok and registered == true then
+		mod.dwpProviderRegistered = true
+		Logging.info("[ForwardContracts] Deadwood Pointer found; contract stand markers on")
+	else
+		Logging.warning("[ForwardContracts] Deadwood Pointer present but provider registration "
+			.. "failed: %s", tostring(registered))
+	end
 end
 
 function ForwardContracts.onSaveSavegame()
@@ -216,6 +284,10 @@ function ForwardContracts:deleteMap()
 	self.offers = nil
 	self.clientRegistry = nil
 	self.reputation = nil
+	self.feedLedger = nil
+
+	-- Cleared so a later save load re-runs checkDependencies rather than trusting this one's.
+	self.isEnabled = false
 end
 
 function ForwardContracts:update(dt) end

@@ -23,7 +23,52 @@ function PlantingWatch.new(contractProvider)
 	-- Seam to ContractStore. Anything implementing `creditPlanting(farmId, speciesName)` will do.
 	self.contractProvider = contractProvider
 
+	-- speciesName -> array of scene nodes for trees planted against a live contract THIS SESSION.
+	-- Display-only convenience (the Deadwood Pointer bridge in main.lua reads it); deliberately
+	-- not saved — node ids do not survive a reload, and the contract's `planted` count is the
+	-- record that matters. Losing the markers on reload loses nothing the contract needs.
+	self.plantedNodes = {}
+
 	return self
+end
+
+-- Cap per species, so an industrial planting session cannot grow the table without bound.
+PlantingWatch.MAX_REMEMBERED_NODES = 256
+
+function PlantingWatch:rememberTree(speciesName, node)
+	if type(node) ~= "number" or node == 0 then
+		return
+	end
+	local list = self.plantedNodes[speciesName]
+	if list == nil then
+		list = {}
+		self.plantedNodes[speciesName] = list
+	end
+	if #list < PlantingWatch.MAX_REMEMBERED_NODES then
+		list[#list + 1] = node
+	end
+end
+
+--- Live nodes remembered for one species. Dead entities (felled, deleted, or growth-stage
+--- swapped) are pruned on the way out, so callers only ever see drawable nodes.
+function PlantingWatch:getPlantedNodes(speciesName)
+	local list = self.plantedNodes[speciesName]
+	if list == nil then
+		return {}
+	end
+	local kept = {}
+	for _, node in ipairs(list) do
+		local alive = entityExists == nil
+		if not alive then
+			local ok, exists = pcall(entityExists, node)
+			alive = ok and exists == true
+		end
+		if alive then
+			kept[#kept + 1] = node
+		end
+	end
+	self.plantedNodes[speciesName] = kept
+	return kept
 end
 
 function PlantingWatch:setContractProvider(contractProvider)
@@ -40,10 +85,6 @@ end
 --- contract would then be unfulfillable, so the warning has to be loud in the log — but a
 --- missing hook must not take the rest of the mod down with it.
 function PlantingWatch:install()
-	if self.isInstalled then
-		return
-	end
-
 	if not g_currentMission:getIsServer() then
 		return
 	end
@@ -54,7 +95,15 @@ function PlantingWatch:install()
 		return
 	end
 
-	local watch = self
+	-- Guard on the MANAGER, and resolve the live watcher through the mod table at call
+	-- time (the FeedLedger pattern). A fresh PlantingWatch is built every loadMap, so a
+	-- flag on self cannot stop the wrapper stacking if the manager outlives the save —
+	-- and a captured `self` would leave a dead watcher receiving the plantings.
+	if g_treePlantManager.fcPlantingHooked then
+		return
+	end
+	g_treePlantManager.fcPlantingHooked = true
+
 	local basePlantTree = g_treePlantManager.plantTree
 
 	-- Wrapped on the INSTANCE, not on the class. `TreePlantManager` is a singleton created
@@ -78,14 +127,17 @@ function PlantingWatch:install()
 		-- Counted only if the tree actually appeared. `plantTree` returns nil when the tree
 		-- type is unknown or `loadTreeNode` fails (`:229`, `:233`).
 		if results[2] ~= nil then
-			watch:onPlanted(manager, treeTypeIndex, growthStateI, isGrowing,
-				nextGrowthTargetHour, existingSplitShapeFileId)
+			local watch = ForwardContracts ~= nil and ForwardContracts.plantingWatch or nil
+			if watch ~= nil then
+				-- results[2] is plantTree's first return, the planted tree's node id — passed
+				-- along so the Deadwood Pointer bridge can mark the contract stand in-world.
+				watch:onPlanted(manager, treeTypeIndex, growthStateI, isGrowing,
+					nextGrowthTargetHour, existingSplitShapeFileId, results[2])
+			end
 		end
 
 		return unpack(results, 2)
 	end
-
-	self.isInstalled = true
 end
 
 --- ⛔ **LOADING A SAVEGAME REPLAYS `plantTree` FOR EVERY TREE IN IT.**
@@ -112,7 +164,7 @@ end
 --- What survives is `TreePlanter:756` — the tree planter vehicle — and `TreePlantEvent:39`,
 --- which is the same action arriving from a client. Which is exactly the set that should count.
 function PlantingWatch:onPlanted(manager, treeTypeIndex, growthStateI, isGrowing,
-	nextGrowthTargetHour, existingSplitShapeFileId)
+	nextGrowthTargetHour, existingSplitShapeFileId, treeId)
 
 	if existingSplitShapeFileId ~= nil or nextGrowthTargetHour ~= nil then
 		return
@@ -149,5 +201,11 @@ function PlantingWatch:onPlanted(manager, treeTypeIndex, growthStateI, isGrowing
 		return
 	end
 
-	provider:creditPlanting(farmId, speciesName)
+	local credited = provider:creditPlanting(farmId, speciesName)
+
+	-- Remembered only when a live contract actually wanted it, so the marker set IS the
+	-- contract stand and not every tree the player ever plants.
+	if credited ~= nil and credited > 0 then
+		self:rememberTree(speciesName, treeId)
+	end
 end

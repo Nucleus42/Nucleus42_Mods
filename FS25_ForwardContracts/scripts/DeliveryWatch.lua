@@ -25,7 +25,6 @@ function DeliveryWatch.new()
 	-- [station][fillTypeIndex] = totalPaid as of the last sale we observed.
 	self.paidSnapshot = {}
 	self.listeners = {}
-	self.isInstalled = false
 
 	-- True only while PlaceableTrainSystem:sellGoods is running. See onSale.
 	self.inTrainSale = false
@@ -57,8 +56,17 @@ local function appendPreservingReturn(oldFunc, newFunc)
 	end
 end
 
+--- The live watcher, resolved at call time. SellingStation and PlaceableTrainSystem are
+--- CLASS tables that outlive the save, so the hooks below are installed once per session
+--- (module-level flag, the FeedLedger pattern) and must never capture an instance — a
+--- captured watcher from a previous save would keep receiving sales, and each reload
+--- would stack another wrapper layer.
+local function liveWatch()
+	return ForwardContracts ~= nil and ForwardContracts.deliveryWatch or nil
+end
+
 function DeliveryWatch:install()
-	if self.isInstalled then
+	if DeliveryWatch.hooksInstalled then
 		return
 	end
 
@@ -68,12 +76,13 @@ function DeliveryWatch:install()
 		return
 	end
 
-	local watch = self
-
 	SellingStation.sellFillType = appendPreservingReturn(
 		SellingStation.sellFillType,
 		function(station, farmId, fillDelta, fillTypeIndex, toolType, extraAttributes)
-			watch:onSale(station, farmId, fillDelta, fillTypeIndex, toolType)
+			local watch = liveWatch()
+			if watch ~= nil then
+				watch:onSale(station, farmId, fillDelta, fillTypeIndex, toolType)
+			end
 		end)
 
 	-- Bracket the train's own sale so onSale can recognise it. sellGoods loops every
@@ -87,9 +96,14 @@ function DeliveryWatch:install()
 	if PlaceableTrainSystem ~= nil and PlaceableTrainSystem.sellGoods ~= nil then
 		local baseSellGoods = PlaceableTrainSystem.sellGoods
 		PlaceableTrainSystem.sellGoods = function(placeable, ...)
-			watch.inTrainSale = true
+			local watch = liveWatch()
+			if watch ~= nil then
+				watch.inTrainSale = true
+			end
 			local ok, result = pcall(baseSellGoods, placeable, ...)
-			watch.inTrainSale = false
+			if watch ~= nil then
+				watch.inTrainSale = false
+			end
 			if not ok then
 				Logging.error("[ForwardContracts] PlaceableTrainSystem:sellGoods failed: %s",
 					tostring(result))
@@ -102,7 +116,7 @@ function DeliveryWatch:install()
 			.. "train sales will be counted as deliveries.")
 	end
 
-	self.isInstalled = true
+	DeliveryWatch.hooksInstalled = true
 end
 
 --- Record where every existing station's totals currently stand.

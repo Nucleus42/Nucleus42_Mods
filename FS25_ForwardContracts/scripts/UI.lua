@@ -54,6 +54,15 @@ function UI:install()
 		return
 	end
 
+	-- The in-game menu outlives the save, but a fresh UI is built every loadMap — so the
+	-- page, tab and dialog are attached once per SESSION and later loads reuse the
+	-- attached frame. Without this, every save load added another board page.
+	if UI.attachedFrame ~= nil then
+		self.boardFrame = UI.attachedFrame
+		self.isInstalled = true
+		return
+	end
+
 	local inGameMenu = g_gui.screenControllers[InGameMenu]
 	if inGameMenu == nil then
 		Logging.warning("[ForwardContracts] In-game menu not available; board page not installed.")
@@ -74,6 +83,7 @@ function UI:install()
 	-- of which belong to a page that is already wired in.
 	self.boardFrame:initialize()
 
+	UI.attachedFrame = self.boardFrame
 	self.isInstalled = true
 end
 

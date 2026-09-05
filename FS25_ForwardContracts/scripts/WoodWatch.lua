@@ -55,8 +55,6 @@ function WoodWatch.new()
 	-- other route is not silently given the wrong species.
 	self.inWoodSale = false
 
-	self.isInstalled = false
-
 	-- OFF BY DEFAULT. Turned off 2026-08-02, once forestry was built and play-tested.
 	--
 	-- > It was ON through the build, deliberately, because the opposite had already cost a real
@@ -113,8 +111,16 @@ local function appendPreservingReturn(oldFunc, newFunc)
 	end
 end
 
+--- The live watcher, resolved at call time. WoodUnloadTrigger is a class table that
+--- outlives the save, so the hooks are installed once per session (module-level flag,
+--- the FeedLedger pattern) and never capture an instance — a captured watcher from a
+--- previous save would keep receiving trees, and each reload would stack a wrapper.
+local function liveWatch()
+	return ForwardContracts ~= nil and ForwardContracts.woodWatch or nil
+end
+
 function WoodWatch:install()
-	if self.isInstalled then
+	if WoodWatch.hooksInstalled then
 		return
 	end
 
@@ -132,13 +138,15 @@ function WoodWatch:install()
 		return
 	end
 
-	local watch = self
-
 	-- Bracket the window and capture the farm. Ordered so the flag always clears even if the
 	-- base call errors — DeliveryWatch learned this the hard way: a stuck flag would silently
 	-- mis-attribute every later delivery rather than failing loudly.
 	local baseProcessWood = WoodUnloadTrigger.processWood
 	WoodUnloadTrigger.processWood = function(trigger, farmId, ...)
+		local watch = liveWatch()
+		if watch == nil then
+			return baseProcessWood(trigger, farmId, ...)
+		end
 		watch.inWoodSale = true
 		watch.saleFarmId = farmId
 		watch.pending = nil
@@ -167,10 +175,13 @@ function WoodWatch:install()
 	WoodUnloadTrigger.calculateWoodBaseValue = appendPreservingReturn(
 		WoodUnloadTrigger.calculateWoodBaseValue,
 		function(results, trigger, objectId)
-			watch:onWoodValued(results[1], results[2], results[3], objectId)
+			local watch = liveWatch()
+			if watch ~= nil then
+				watch:onWoodValued(results[1], results[2], results[3], objectId)
+			end
 		end)
 
-	self.isInstalled = true
+	WoodWatch.hooksInstalled = true
 end
 
 -- ---------------------------------------------------------------------------

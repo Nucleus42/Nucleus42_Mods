@@ -100,7 +100,6 @@ function Animals.new()
 	self.pendingRemovals = {}
 
 	self.listeners = {}
-	self.isInstalled = false
 
 	return self
 end
@@ -3040,7 +3039,11 @@ end
 --- SECOND, synchronously in the same call. So we stash removals as pending and only
 --- confirm them when the money follows.
 function Animals:install()
-	if self.isInstalled then
+	-- Once per SESSION, on the module (the FeedLedger pattern): FSBaseMission and the
+	-- message center outlive the save, so hooks installed per loadMap would stack, and
+	-- a captured `self` would leave dead watchers from earlier saves receiving sales.
+	-- The live instance is resolved through the mod table at call time instead.
+	if Animals.hooksInstalled then
 		return
 	end
 
@@ -3048,10 +3051,17 @@ function Animals:install()
 		return
 	end
 
-	local animals = self
+	local function liveAnimals()
+		return ForwardContracts ~= nil and ForwardContracts.animals or nil
+	end
 
 	if AnimalClusterUpdateEvent ~= nil then
-		g_messageCenter:subscribe(AnimalClusterUpdateEvent, self.onClusterUpdate, self)
+		g_messageCenter:subscribe(AnimalClusterUpdateEvent, function(_, ...)
+			local animals = liveAnimals()
+			if animals ~= nil then
+				animals:onClusterUpdate(...)
+			end
+		end, Animals)
 	else
 		Logging.warning("[ForwardContracts] AnimalClusterUpdateEvent not found; animal "
 			.. "deliveries cannot be observed.")
@@ -3065,13 +3075,16 @@ function Animals:install()
 		local results = { baseAddMoney(mission, amount, farmId, moneyType, addChange, forceShow) }
 
 		if moneyType == MoneyType.SOLD_ANIMALS then
-			animals:onAnimalsSold(farmId, amount)
+			local animals = liveAnimals()
+			if animals ~= nil then
+				animals:onAnimalsSold(farmId, amount)
+			end
 		end
 
 		return unpack(results)
 	end
 
-	self.isInstalled = true
+	Animals.hooksInstalled = true
 end
 
 --- How well an animal has been KEPT, as a ratio of its weight to what its age warrants.

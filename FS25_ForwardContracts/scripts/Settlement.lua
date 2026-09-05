@@ -217,13 +217,15 @@ function Settlement:settleAnimalsAgainst(contract, pool, sale, animals, provider
 		#pool, #eligible,
 		#summary > 0 and (", rejected " .. table.concat(summary, ", ")) or "")
 
-	self:notifySale(contract, #pool, #eligible, rejected)
-
 	local countedHead = math.min(#eligible, contract.remainingLitres or 0)
 	if countedHead <= 0 then
 		-- Nothing claimed, so every animal offered stays available to the next contract.
 		return pool
 	end
+
+	-- Notified AFTER the quota clamp, with the count actually claimed — "6 counted" when
+	-- the quota only took 4 would be a lie the player checks against their bank balance.
+	self:notifySale(contract, #pool, countedHead, rejected)
 
 	-- When more animals qualify than the quota still needs, WHICH ones count is worth money
 	-- and must not fall out of table order.
